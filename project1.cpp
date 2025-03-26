@@ -107,25 +107,70 @@ public:
 
 class Scene {
 public :
+    Vector light;
+    double intensity;
     std::vector<Sphere> Spheres;
+    Vector camera;
 
-    Scene(std::vector<Sphere>& S) {
+    Scene(Vector& l, double& i, std::vector<Sphere>& S, Vector& c) {
+        light = l;
+        intensity = i;
         Spheres = S;
+        camera = c;
     }
 
     void add(Sphere& S) {
         Spheres.push_back(S);
     }
 
+    Vector getColor(const Ray& ray) {
+
+        std::vector<Sphere>::iterator it1 = Spheres.begin();
+        std::vector<Sphere>::iterator it2 = Spheres.begin();
+
+        Vector intersection(0,0,0);
+        Vector normal(0,0,0);   
+
+        bool found = false;
+        Sphere BestS = *it1;
+        double bestdist;
+
+        while(it1 < Spheres.end()) {
+
+            if(it1->intersect(ray, intersection, normal)){
+                found = true;
+                BestS = *it1;
+                bestdist = (intersection - camera).norm2();
+                break;
+            }
+            ++it1;
+        }
+
+        if ( ! found) {
+            return Vector(100,100,100);
+        }
+
+        while(it2 < Spheres.end()){
+
+            if(it2->intersect(ray, intersection, normal)){
+
+                if((intersection - camera).norm2() < bestdist){
+                    BestS = *it2;
+                    bestdist = (intersection - camera).norm2();
+                }
+
+            }
+            ++it2;
+        }
+
+        BestS.intersect(ray, intersection, normal);
+        Vector LP = light - intersection;
+        double dotprod = dot(normal,LP/LP.norm());
+        if (dotprod < 0){return Vector(0,0,0); }
+        return intensity/(4*pi*LP.norm2()) * BestS.albedo/pi * dotprod;
+    };
 };
 
-
-Vector getColor(Vector& light, double& intensity, Vector& albedo, Vector& normal, Vector& point) {
-    Vector LP = light - point;
-    double dotprod = dot(normal,LP/LP.norm());
-    if (dotprod < 0){return Vector(0,0,0); }
-    return intensity/(4*pi*LP.norm2()) * albedo/pi * dotprod;
-};
 
 
 int main() {
@@ -136,25 +181,26 @@ int main() {
     double fov = 60 * pi / 180;
     Vector albedo(1, 0, 0);
     Sphere S(Vector(0, 0, 0), 10, albedo);
-    Vector light(20, 20, 20);
-    double intensity = 10000000;
+    Vector light(-10, 20, 40);
+    double intensity = 100000000;
 
-    Sphere ceil(Vector(1000, 0, 0), 940, Vector(0.2, 0.5, 0.9));
-    Sphere floor(Vector(-1000, 0, 0), 940, Vector(0.3, 0.4, 0.7));
-    Sphere front(Vector(0, 0, -1000), 940, Vector(0.4, 0.8, 0.7));
-    Sphere left(Vector(0, 1000, 0), 940, Vector(0.9, 0.2, 0.9));
-    Sphere right(Vector(0, -1000, 0), 940, Vector(0.6, 0.5, 0.1));
-    Sphere back(Vector(0, 0, 1000), 940, Vector(0.9, 0.4, 0.3));
+    double bigradius = 940;
+    Sphere right(Vector(1000, 0, 0), bigradius, Vector(0.2, 0.5, 0.9));
+    Sphere left(Vector(-1000, 0, 0), bigradius, Vector(0.3, 0.4, 0.7));
+    Sphere front(Vector(0, 0, -1000), bigradius, Vector(0.4, 0.8, 0.7));
+    Sphere ceil(Vector(0, 1000, 0), bigradius, Vector(0.9, 0.2, 0.9));
+    Sphere floor(Vector(0, -1000, 0), bigradius, Vector(0.6, 0.5, 0.1));
+    Sphere back(Vector(0, 0, 1000), bigradius, Vector(0.9, 0.4, 0.3));
     std::vector<Sphere> room;
-    Scene scene(room);
+    Scene scene(light, intensity, room, camera);
 
-    //scene.add(ceil);
-    //scene.add(floor);
-    //scene.add(front);
-    //scene.add(left);
-    //scene.add(right);
-    //scene.add(back);
+    scene.add(ceil);
+    scene.add(floor);
     scene.add(S);
+    scene.add(front);
+    scene.add(left);
+    scene.add(right);
+    scene.add(back);
 
 	std::vector<unsigned char> image(W * H * 3, 0);
 	for (int i = 0; i < H; i++) {
@@ -164,35 +210,13 @@ int main() {
             Vector ray_direction(j - W/2 +0.5, H/2 - i - 0.5, z);
             ray_direction.normalize();
             Ray ray(camera, ray_direction);
-            Vector intersection(0,0,0);
-            Vector normal(0,0,0);
 
-            bool colored = false;
-            std::vector<Sphere>::iterator it = scene.Spheres.begin();
+            Vector color = scene.getColor(ray);
 
-            while(it < scene.Spheres.end()) {
+            image[(i * W + j) * 3 + 0] = std::max(0., std::min(255., color.data[0]));
+            image[(i * W + j) * 3 + 1] = std::max(0., std::min(255., color.data[1]));
+            image[(i * W + j) * 3 + 2] = std::max(0., std::min(255., color.data[2]));
 
-                if(it->intersect(ray, intersection, normal)){
-                    colored = true;
-                    
-                    Vector color = getColor(light, intensity, albedo, normal, intersection);           
-
-                    image[(i * W + j) * 3 + 0] = std::max(0., std::min(255., color.data[0]));
-                    image[(i * W + j) * 3 + 1] = std::max(0., std::min(255., color.data[1]));
-                    image[(i * W + j) * 3 + 2] = std::max(0., std::min(255., color.data[2]));
-
-                    break;
-                }
-
-                ++it;
-            }
-
-            if(! colored) {
-                image[(i * W + j) * 3 + 0] = 100;
-                image[(i * W + j) * 3 + 1] = 100;
-                image[(i * W + j) * 3 + 2] = 100;
-            }
-			
 		}
 	}
 	stbi_write_png("image.png", W, H, 3, &image[0], 0);
