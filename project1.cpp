@@ -126,8 +126,8 @@ public :
         std::vector<Sphere>::iterator it1 = Spheres.begin();
         std::vector<Sphere>::iterator it2 = Spheres.begin();
 
-        Vector intersection(0,0,0);
-        Vector normal(0,0,0);   
+        Vector intersection;
+        Vector normal;   
 
         bool found = false;
         Sphere BestS = *it1;
@@ -162,12 +162,16 @@ public :
         }
 
         BestS.intersect(ray, intersection, normal);
+        intersection = intersection + pow(10, -10)*normal;
         Vector LP = light - intersection;
         Ray shadow_ray(intersection, LP/LP.norm());
 
+        Vector intersection2;
+        Vector normal2;
         std::vector<Sphere>::iterator it3 = Spheres.begin();
         while(it3 < Spheres.end()){
-            if(it3->intersect(shadow_ray, intersection, normal)){
+            bool flag = it3->intersect(shadow_ray, intersection2, normal2);
+            if(flag && (LP.norm() > (intersection2 - intersection).norm())){
                 return Vector(100, 100, 100);
             }
             ++it3;
@@ -189,6 +193,7 @@ int main() {
     double fov = 60 * pi / 180;
     Vector albedo(1, 0, 0);
     Sphere S(Vector(0, 0, 0), 10, albedo);
+    Sphere S2(Vector(0,20,0), 10, Vector(0,0,1));
     Vector light(-10, 20, 40);
     double intensity = 5*pow(10,9);
 
@@ -209,6 +214,7 @@ int main() {
     scene.add(right);
     scene.add(back);
     scene.add(S);
+    scene.add(S2);
 
 	std::vector<unsigned char> image(W * H * 3, 0);
 	for (int i = 0; i < H; i++) {
