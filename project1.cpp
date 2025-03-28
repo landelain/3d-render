@@ -202,7 +202,7 @@ int main() {
     double fov = 60 * pi / 180;
     Vector albedo(1, 1, 1);
     Sphere S(Vector(0, 0, 0), 10, albedo, true);
-    Sphere S2(Vector(0,20,0), 10, Vector(0,0,1));
+    Sphere S2(Vector(20,0,30), 10, Vector(0,0,1));
     Vector light(0, 20, 40);
     double intensity = 5*pow(10,9);
 
@@ -223,7 +223,7 @@ int main() {
     scene.add(right);
     scene.add(back);
     scene.add(S);
-    //scene.add(S2);
+    scene.add(S2);
 
 	std::vector<unsigned char> image(W * H * 3, 0);
 	for (int i = 0; i < H; i++) {
