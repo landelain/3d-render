@@ -77,11 +77,13 @@ public:
     Vector origin;
     double radius;
     Vector albedo;
+    bool ismirror;
 
-	Sphere(const Vector& o, const double& r, const Vector& a){
+	Sphere(const Vector& o, const double& r, const Vector& a, const bool& im = false){
         origin = o;
         radius = r;
         albedo = a;
+        ismirror = im;
     }
 
     bool intersect(const Ray& ray, Vector& point, Vector& normal){
@@ -121,7 +123,7 @@ public :
         Spheres.push_back(S);
     }
 
-    Vector getColor(const Ray& ray, const Vector& source) {
+    Vector getColor(const Ray& ray) {
 
         std::vector<Sphere>::iterator it1 = Spheres.begin();
         std::vector<Sphere>::iterator it2 = Spheres.begin();
@@ -138,7 +140,7 @@ public :
             if(it1->intersect(ray, intersection, normal)){
                 found = true;
                 BestS = *it1;
-                bestdist = (intersection - source).norm2();
+                bestdist = (intersection - ray.origin).norm2();
                 break;
             }
             ++it1;
@@ -152,9 +154,9 @@ public :
 
             if(it2->intersect(ray, intersection, normal)){
 
-                if((intersection - source).norm2() < bestdist){
+                if((intersection - ray.origin).norm2() < bestdist){
                     BestS = *it2;
-                    bestdist = (intersection - source).norm2();
+                    bestdist = (intersection - ray.origin).norm2();
                 }
 
             }
@@ -162,10 +164,10 @@ public :
         }
 
         BestS.intersect(ray, intersection, normal);
-        intersection = intersection + pow(10, -10)*normal;
+        intersection = intersection + pow(10, -12)*normal;
         Vector LP = light - intersection;
-        Ray shadow_ray(intersection, LP/LP.norm());
 
+        Ray shadow_ray(intersection, LP/LP.norm());
         Vector intersection2;
         Vector normal2;
         std::vector<Sphere>::iterator it3 = Spheres.begin();
@@ -175,6 +177,13 @@ public :
                 return Vector(100, 100, 100);
             }
             ++it3;
+        }
+
+        if(BestS.ismirror){
+            Vector reflection_direction = ray.direction - 2*dot(ray.direction, normal) * normal;
+            Ray reflection_ray(intersection, reflection_direction);
+            Vector color = getColor(reflection_ray);
+            return color;
         }
 
         double dotprod = dot(normal,LP/LP.norm());
@@ -191,10 +200,10 @@ int main() {
     Vector camera(0, 0, 55);
 
     double fov = 60 * pi / 180;
-    Vector albedo(1, 0, 0);
-    Sphere S(Vector(0, 0, 0), 10, albedo);
+    Vector albedo(1, 1, 1);
+    Sphere S(Vector(0, 0, 0), 10, albedo, true);
     Sphere S2(Vector(0,20,0), 10, Vector(0,0,1));
-    Vector light(-10, 20, 40);
+    Vector light(0, 20, 40);
     double intensity = 5*pow(10,9);
 
     double bigradius = 940;
@@ -214,7 +223,7 @@ int main() {
     scene.add(right);
     scene.add(back);
     scene.add(S);
-    scene.add(S2);
+    //scene.add(S2);
 
 	std::vector<unsigned char> image(W * H * 3, 0);
 	for (int i = 0; i < H; i++) {
@@ -225,7 +234,7 @@ int main() {
             ray_direction.normalize();
             Ray ray(camera, ray_direction);
 
-            Vector color = scene.getColor(ray, camera);
+            Vector color = scene.getColor(ray);
             
             image[(i * W + j) * 3 + 0] = std::max(0., std::min(255., std::pow(color.data[0], 1/2.2)));
             image[(i * W + j) * 3 + 1] = std::max(0., std::min(255., std::pow(color.data[1], 1/2.2)));
