@@ -123,7 +123,7 @@ public :
         Spheres.push_back(S);
     }
 
-    Vector getColor(const Ray& ray) {
+    Vector getColor(const Ray& ray, int depth) {
 
         std::vector<Sphere>::iterator it1 = Spheres.begin();
         std::vector<Sphere>::iterator it2 = Spheres.begin();
@@ -174,15 +174,15 @@ public :
         while(it3 < Spheres.end()){
             bool flag = it3->intersect(shadow_ray, intersection2, normal2);
             if(flag && (LP.norm() > (intersection2 - intersection).norm())){
-                return Vector(100, 100, 100);
+                return Vector(1000, 1000, 1000);
             }
             ++it3;
         }
 
-        if(BestS.ismirror){
+        if(BestS.ismirror && depth > 0){
             Vector reflection_direction = ray.direction - 2*dot(ray.direction, normal) * normal;
             Ray reflection_ray(intersection, reflection_direction);
-            Vector color = getColor(reflection_ray);
+            Vector color = getColor(reflection_ray, depth-1);
             return color;
         }
 
@@ -198,13 +198,14 @@ int main() {
 	int W = 512;
 	int H = 512;
     Vector camera(0, 0, 55);
+    int max_depth = 2;
 
     double fov = 60 * pi / 180;
     Vector albedo(1, 1, 1);
-    Sphere S(Vector(0, 0, 0), 10, albedo, true);
-    Sphere S2(Vector(20,0,30), 10, Vector(0,0,1));
-    Vector light(0, 20, 40);
-    double intensity = 5*pow(10,9);
+    Sphere S(Vector(0, 0, 10), 10, albedo, true);
+    Sphere S2(Vector(20,10,15), 10, Vector(0,0,1));
+    Vector light(-10, 20, 40);
+    double intensity = 5*pow(10,9.5);
 
     double bigradius = 940;
     Sphere right(Vector(1000, 0, 0), bigradius, Vector(0.6, 0.5, 0.1));
@@ -212,7 +213,7 @@ int main() {
     Sphere front(Vector(0, 0, -1000), bigradius, Vector(0.4, 0.8, 0.7));
     Sphere ceil(Vector(0, 1000, 0), bigradius, Vector(0.2, 0.5, 0.9));
     Sphere floor(Vector(0, -1000, 0), 990, Vector(0.3, 0.4, 0.7));
-    Sphere back(Vector(0, 0, 1000), bigradius, Vector(0.9, 0.4, 0.3));
+    Sphere back(Vector(0, 0, 1000), bigradius, Vector(0.9, 0.4, 0.3), true);
     std::vector<Sphere> room;
     Scene scene(light, intensity, room);
 
@@ -234,7 +235,7 @@ int main() {
             ray_direction.normalize();
             Ray ray(camera, ray_direction);
 
-            Vector color = scene.getColor(ray);
+            Vector color = scene.getColor(ray, max_depth);
             
             image[(i * W + j) * 3 + 0] = std::max(0., std::min(255., std::pow(color.data[0], 1/2.2)));
             image[(i * W + j) * 3 + 1] = std::max(0., std::min(255., std::pow(color.data[1], 1/2.2)));
