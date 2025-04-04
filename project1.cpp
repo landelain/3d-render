@@ -58,6 +58,9 @@ double dot(const Vector& a, const Vector& b) {
 Vector cross(const Vector& a, const Vector& b) {
 	return Vector(a[1] * b[2] - a[2] * b[1], a[2] * b[0] - a[0] * b[2], a[0] * b[1] - a[1] * b[0]);
 }
+Vector operator*(const Vector& a, const Vector& b){
+    return Vector(a[0] * b[0], a[1] * b[1], a[2] * b[2]);
+}
 
 
 class Ray {
@@ -107,6 +110,57 @@ public:
     }
 };
 
+void get_tangent(const Vector& normal, Vector& tangent, int& idx){
+    double x = normal.data[0];
+    double y = normal.data[1];
+    double z = normal.data[2];
+
+    if(x < y && x < z){
+        tangent.data[0] = 0.0;
+        tangent.data[1] = -z;
+        tangent.data[2] = y;
+        idx = 0;
+    }
+    else if (y < x && y < z)
+    {
+        tangent.data[0] = -z;
+        tangent.data[1] = 0.0;
+        tangent.data[2] = x;
+        idx = 1;
+    }
+    else{
+        tangent.data[0] = -y;
+        tangent.data[1] = x;
+        tangent.data[2] = 0.0;
+        idx = 2;
+    }
+
+    tangent.normalize();
+}
+
+void random_vector(const Vector& normal, Vector& random){
+    std::random_device rd;
+    std::mt19937 gen(rd());
+    std::uniform_real_distribution<double> unif(0.0, 1.0);
+    double r1 = unif(gen);
+    double r2 = unif(gen);
+
+    double x = cos(2*pi*r1)*sqrt(1-r2);
+    double y = sin(2*pi*r1)*sqrt(1-r2);
+    double z = sqrt(r2);
+    std::vector<float> coor(3);
+    coor[0] = x;
+    coor[1] = y;
+    coor[2] = z;
+
+    Vector tangent, tangent2;
+    int idx;
+    get_tangent(normal, tangent, idx);
+    tangent2 = cross(normal, tangent);
+    random = coor[idx] * normal + coor[(idx + 1) % 3] * tangent + coor[(idx + 2)% 3] * tangent2;
+}
+
+
 class Scene {
 public :
     Vector light;
@@ -123,7 +177,11 @@ public :
         Spheres.push_back(S);
     }
 
-    Vector getColor(const Ray& ray, int depth) {
+    Vector getColor(const Ray& ray, int depth, int depth2, int N) {
+
+        if(depth2 <= 0){
+            return Vector(1000, 1000, 1000);
+        }
 
         std::vector<Sphere>::iterator it1 = Spheres.begin();
         std::vector<Sphere>::iterator it2 = Spheres.begin();
@@ -147,7 +205,7 @@ public :
         }
 
         if ( ! found) {
-            return Vector(100,100,100);
+            return Vector(1000,1000,1000);
         }
 
         while(it2 < Spheres.end()){
@@ -174,7 +232,16 @@ public :
         while(it3 < Spheres.end()){
             bool flag = it3->intersect(shadow_ray, intersection2, normal2);
             if(flag && (LP.norm() > (intersection2 - intersection).norm())){
-                return Vector(1000, 1000, 1000);
+                Vector color(0,0,0);
+                for(int i = 0; i< N; i++){
+                    Vector random;
+                    random_vector(normal, random);
+                    Ray rec_ray(intersection, random);
+                    Vector rec_color =  getColor(rec_ray, depth, depth2-1, N);
+                    rec_color = BestS.albedo * rec_color / N;
+                    color = color + rec_color;
+                }
+                return color;
             }
             ++it3;
         }
@@ -182,13 +249,23 @@ public :
         if(BestS.ismirror && depth > 0){
             Vector reflection_direction = ray.direction - 2*dot(ray.direction, normal) * normal;
             Ray reflection_ray(intersection, reflection_direction);
-            Vector color = getColor(reflection_ray, depth-1);
+            Vector color = getColor(reflection_ray, depth-1, depth2, N);
             return color;
         }
 
         double dotprod = dot(normal,LP/LP.norm());
         if (dotprod < 0){return Vector(100,100,100); }
-        return intensity/(4*pi*LP.norm2()) * BestS.albedo/pi * dotprod;
+        Vector color =  intensity/(4*pi*LP.norm2()) * BestS.albedo/pi * dotprod;
+
+        for(int i = 0; i< N; i++){
+                    Vector random;
+                    random_vector(normal, random);
+                    Ray rec_ray(intersection, random);
+                    Vector rec_color =  getColor(rec_ray, depth, depth2-1, N);
+                    rec_color = BestS.albedo * rec_color / N;
+                    color = color + rec_color;
+                }
+        return color;
     };
 
 };
@@ -199,6 +276,8 @@ int main() {
 	int H = 512;
     Vector camera(0, 0, 55);
     int max_depth = 2;
+    int light_depth = 3;
+    int N = 32;
 
     double fov = 60 * pi / 180;
     Vector albedo(1, 1, 1);
@@ -227,7 +306,9 @@ int main() {
     scene.add(S2);
 
 	std::vector<unsigned char> image(W * H * 3, 0);
+    #pragma omp parallel for schedule(dynamic, 1)
 	for (int i = 0; i < H; i++) {
+        #pragma omp parallel for schedule(dynamic, 1)
 		for (int j = 0; j < W; j++) {
 
             double z = -W/(2.*tan(fov/2));
