@@ -8,6 +8,7 @@
 #include "stb_image.h"
 
 #include <iostream>
+#include <random>
 
 #define pi  3.14159
 
@@ -277,7 +278,7 @@ int main() {
     Vector camera(0, 0, 55);
     int max_depth = 2;
     int light_depth = 3;
-    int N = 32;
+    int N = 10;
 
     double fov = 60 * pi / 180;
     Vector albedo(1, 1, 1);
@@ -306,17 +307,17 @@ int main() {
     scene.add(S2);
 
 	std::vector<unsigned char> image(W * H * 3, 0);
-    #pragma omp parallel for schedule(dynamic, 1)
+    #pragma omp parallel for collapse(2) schedule(guided)
 	for (int i = 0; i < H; i++) {
-        #pragma omp parallel for schedule(dynamic, 1)
 		for (int j = 0; j < W; j++) {
+            std::cout << i << std::endl;
 
             double z = -W/(2.*tan(fov/2));
             Vector ray_direction(j - W/2 +0.5, H/2 - i - 0.5, z);
             ray_direction.normalize();
             Ray ray(camera, ray_direction);
 
-            Vector color = scene.getColor(ray, max_depth);
+            Vector color = scene.getColor(ray, max_depth, light_depth, N);
             
             image[(i * W + j) * 3 + 0] = std::max(0., std::min(255., std::pow(color.data[0], 1/2.2)));
             image[(i * W + j) * 3 + 1] = std::max(0., std::min(255., std::pow(color.data[1], 1/2.2)));
@@ -324,7 +325,7 @@ int main() {
 
 		}
 	}
-	stbi_write_png("image.png", W, H, 3, &image[0], 0);
+	stbi_write_png("image2.png", W, H, 3, &image[0], 0);
 
 	return 0;
 }
