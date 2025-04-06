@@ -14,6 +14,10 @@
 
 double sqr(double& a ){ return a*a;};
 
+std::random_device rd;
+std::mt19937 gen(rd());
+std::uniform_real_distribution<double> unif(0.0, 1.0);
+
 class Vector {
 public:
 	explicit Vector(double x = 0, double y = 0, double z = 0) {
@@ -140,9 +144,6 @@ void get_tangent(const Vector& normal, Vector& tangent, int& idx){
 }
 
 void random_vector(const Vector& normal, Vector& random){
-    std::random_device rd;
-    std::mt19937 gen(rd());
-    std::uniform_real_distribution<double> unif(0.0, 1.0);
     double r1 = unif(gen);
     double r2 = unif(gen);
 
@@ -178,94 +179,66 @@ public :
         Spheres.push_back(S);
     }
 
-    Vector getColor(const Ray& ray, int depth, int depth2, int N) {
-
-        if(depth2 <= 0){
-            return Vector(1000, 1000, 1000);
-        }
-
-        std::vector<Sphere>::iterator it1 = Spheres.begin();
-        std::vector<Sphere>::iterator it2 = Spheres.begin();
+    Vector getColor(const Ray& ray, int depth, int depth2) {
 
         Vector intersection;
         Vector normal;   
 
         bool found = false;
-        Sphere BestS = *it1;
-        double bestdist;
+        Sphere BestS = Spheres[0];
+        double bestdist = 10000;
 
-        while(it1 < Spheres.end()) {
-
-            if(it1->intersect(ray, intersection, normal)){
+        for (auto s : this->Spheres){
+            if((s.intersect(ray, intersection, normal)) && ((intersection - ray.origin).norm2() < bestdist)){
                 found = true;
-                BestS = *it1;
+                BestS = s;
                 bestdist = (intersection - ray.origin).norm2();
-                break;
             }
-            ++it1;
         }
 
         if ( ! found) {
+            std::cout << "help" << std::endl;
             return Vector(1000,1000,1000);
         }
 
-        while(it2 < Spheres.end()){
-
-            if(it2->intersect(ray, intersection, normal)){
-
-                if((intersection - ray.origin).norm2() < bestdist){
-                    BestS = *it2;
-                    bestdist = (intersection - ray.origin).norm2();
-                }
-
-            }
-            ++it2;
-        }
-
-        BestS.intersect(ray, intersection, normal);
         intersection = intersection + pow(10, -12)*normal;
         Vector LP = light - intersection;
-
-        Ray shadow_ray(intersection, LP/LP.norm());
-        Vector intersection2;
-        Vector normal2;
-        std::vector<Sphere>::iterator it3 = Spheres.begin();
-        while(it3 < Spheres.end()){
-            bool flag = it3->intersect(shadow_ray, intersection2, normal2);
-            if(flag && (LP.norm() > (intersection2 - intersection).norm())){
-                Vector color(0,0,0);
-                for(int i = 0; i< N; i++){
-                    Vector random;
-                    random_vector(normal, random);
-                    Ray rec_ray(intersection, random);
-                    Vector rec_color =  getColor(rec_ray, depth, depth2-1, N);
-                    rec_color = BestS.albedo * rec_color / N;
-                    color = color + rec_color;
-                }
-                return color;
-            }
-            ++it3;
-        }
 
         if(BestS.ismirror && depth > 0){
             Vector reflection_direction = ray.direction - 2*dot(ray.direction, normal) * normal;
             Ray reflection_ray(intersection, reflection_direction);
-            Vector color = getColor(reflection_ray, depth-1, depth2, N);
+            Vector color = getColor(reflection_ray, depth-1, depth2);
             return color;
         }
 
-        double dotprod = dot(normal,LP/LP.norm());
-        if (dotprod < 0){return Vector(100,100,100); }
-        Vector color =  intensity/(4*pi*LP.norm2()) * BestS.albedo/pi * dotprod;
+        Ray shadow_ray(intersection, LP/LP.norm());
+        Vector intersection2;
+        Vector normal2;
+        bool shadow = false;
+        std::vector<Sphere>::iterator it2 = Spheres.begin();
+        while(it2 < Spheres.end()){
+            bool flag = it2->intersect(shadow_ray, intersection2, normal2);
+            if(flag && (LP.norm() > (intersection2 - intersection).norm())){
+                shadow = true;
+                break;
+            }
+            ++it2;
+        }
 
-        for(int i = 0; i< N; i++){
-                    Vector random;
-                    random_vector(normal, random);
-                    Ray rec_ray(intersection, random);
-                    Vector rec_color =  getColor(rec_ray, depth, depth2-1, N);
-                    rec_color = BestS.albedo * rec_color / N;
-                    color = color + rec_color;
-                }
+        Vector color(0,0,0);
+        if (! shadow){
+            double dotprod = dot(normal,LP/LP.norm());
+            // if (dotprod < 0){return Vector(100,100,100); }
+            Vector color =  intensity/(4*pi*LP.norm2()) * BestS.albedo/pi * dotprod;
+        }
+
+        if(depth2 <= 0 ){return color;}
+
+        Vector random;
+        random_vector(normal, random);
+        Ray rec_ray(intersection, random);
+        color =  color + BestS.albedo * getColor(rec_ray, depth, depth2-1);
+    
         return color;
     };
 
@@ -276,8 +249,8 @@ int main() {
 	int W = 512;
 	int H = 512;
     Vector camera(0, 0, 55);
-    int max_depth = 2;
-    int light_depth = 3;
+    int max_depth = 0;
+    int light_depth = 0;
     int N = 10;
 
     double fov = 60 * pi / 180;
@@ -307,17 +280,30 @@ int main() {
     scene.add(S2);
 
 	std::vector<unsigned char> image(W * H * 3, 0);
+    //int count = 0;
     #pragma omp parallel for collapse(2) schedule(guided)
 	for (int i = 0; i < H; i++) {
 		for (int j = 0; j < W; j++) {
-            std::cout << i << std::endl;
 
+            // if(i == 0){
+            //     count += 1;
+            //     std::cout << (1. * count)/(1. * W) * 100 << "%" << std::endl;
+            // }
+
+            Vector color(0,0,0);
             double z = -W/(2.*tan(fov/2));
-            Vector ray_direction(j - W/2 +0.5, H/2 - i - 0.5, z);
-            ray_direction.normalize();
-            Ray ray(camera, ray_direction);
+            for(int n = 0; n < N; ++n){
+                double r1 = unif(gen);
+                double r2 = unif(gen);
+                double x2 = sqrt(-2*log(r1)) * cos(2*pi*r1) *0.25;
+                double y2 = sqrt(-2*log(r1)) * sin(2*pi*r1) *0.25;
 
-            Vector color = scene.getColor(ray, max_depth, light_depth, N);
+                Vector ray_direction(j - W/2 +0.5 + x2, H/2 - i - 0.5 + y2, z);
+                ray_direction.normalize();
+                Ray ray(camera, ray_direction);
+                color = color + scene.getColor(ray, max_depth, light_depth);
+            }
+            color = color / N;
             
             image[(i * W + j) * 3 + 0] = std::max(0., std::min(255., std::pow(color.data[0], 1/2.2)));
             image[(i * W + j) * 3 + 1] = std::max(0., std::min(255., std::pow(color.data[1], 1/2.2)));
