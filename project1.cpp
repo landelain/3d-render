@@ -189,18 +189,20 @@ public :
         double bestdist = 10000;
 
         for (auto s : this->Spheres){
-            if((s.intersect(ray, intersection, normal)) && ((intersection - ray.origin).norm2() < bestdist)){
-                found = true;
-                BestS = s;
-                bestdist = (intersection - ray.origin).norm2();
+            if((s.intersect(ray, intersection, normal))){
+                    found = true;
+                if ((intersection - ray.origin).norm() < bestdist){
+                    BestS = s;
+                    bestdist = (intersection - ray.origin).norm();
+                }
             }
         }
 
         if ( ! found) {
-            std::cout << "help" << std::endl;
-            return Vector(1000,1000,1000);
+            return Vector(100,100,100);
         }
 
+        BestS.intersect(ray, intersection, normal);
         intersection = intersection + pow(10, -12)*normal;
         Vector LP = light - intersection;
 
@@ -228,8 +230,8 @@ public :
         Vector color(0,0,0);
         if (! shadow){
             double dotprod = dot(normal,LP/LP.norm());
-            // if (dotprod < 0){return Vector(100,100,100); }
-            Vector color =  intensity/(4*pi*LP.norm2()) * BestS.albedo/pi * dotprod;
+            if (dotprod < 0){return Vector(100,100,100); }
+            color =  intensity/(4*pi*LP.norm2()) * BestS.albedo/pi * dotprod;
         }
 
         if(depth2 <= 0 ){return color;}
@@ -249,16 +251,16 @@ int main() {
 	int W = 512;
 	int H = 512;
     Vector camera(0, 0, 55);
-    int max_depth = 0;
-    int light_depth = 0;
-    int N = 10;
+    int max_depth = 3;
+    int light_depth = 4;
+    int N = 50;
 
     double fov = 60 * pi / 180;
-    Vector albedo(1, 1, 1);
+    Vector albedo(1, 0, 0);
     Sphere S(Vector(0, 0, 10), 10, albedo, true);
     Sphere S2(Vector(20,10,15), 10, Vector(0,0,1));
     Vector light(-10, 20, 40);
-    double intensity = 5*pow(10,9.5);
+    double intensity = 5*pow(10,9);
 
     double bigradius = 940;
     Sphere right(Vector(1000, 0, 0), bigradius, Vector(0.6, 0.5, 0.1));
@@ -277,7 +279,7 @@ int main() {
     scene.add(right);
     scene.add(back);
     scene.add(S);
-    scene.add(S2);
+    //scene.add(S2);
 
 	std::vector<unsigned char> image(W * H * 3, 0);
     //int count = 0;
@@ -295,8 +297,8 @@ int main() {
             for(int n = 0; n < N; ++n){
                 double r1 = unif(gen);
                 double r2 = unif(gen);
-                double x2 = sqrt(-2*log(r1)) * cos(2*pi*r1) *0.25;
-                double y2 = sqrt(-2*log(r1)) * sin(2*pi*r1) *0.25;
+                double x2 = sqrt(-2*log(r1)) * cos(2*pi*r1) * 0.25;
+                double y2 = sqrt(-2*log(r1)) * sin(2*pi*r1) * 0.25;
 
                 Vector ray_direction(j - W/2 +0.5 + x2, H/2 - i - 0.5 + y2, z);
                 ray_direction.normalize();
