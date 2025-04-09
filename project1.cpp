@@ -115,29 +115,30 @@ public:
     }
 };
 
-void get_tangent(const Vector& normal, Vector& tangent, int& idx){
+void get_tangent(const Vector& normal, Vector& tangent){
     double x = normal.data[0];
     double y = normal.data[1];
     double z = normal.data[2];
 
-    if(x < y && x < z){
+    double ax = abs(x);
+    double ay = abs(y);
+    double az = abs(z);
+
+    if(ax < ay && ax < az){
         tangent.data[0] = 0.0;
         tangent.data[1] = -z;
         tangent.data[2] = y;
-        idx = 0;
     }
-    else if (y < x && y < z)
+    else if (ay < ax && ay < az)
     {
         tangent.data[0] = -z;
         tangent.data[1] = 0.0;
         tangent.data[2] = x;
-        idx = 1;
     }
     else{
         tangent.data[0] = -y;
         tangent.data[1] = x;
         tangent.data[2] = 0.0;
-        idx = 2;
     }
 
     tangent.normalize();
@@ -156,10 +157,9 @@ void random_vector(const Vector& normal, Vector& random){
     coor[2] = z;
 
     Vector tangent, tangent2;
-    int idx;
-    get_tangent(normal, tangent, idx);
+    get_tangent(normal, tangent);
     tangent2 = cross(normal, tangent);
-    random = coor[idx] * normal + coor[(idx + 1) % 3] * tangent + coor[(idx + 2)% 3] * tangent2;
+    random = coor[2] * normal + coor[0] * tangent + coor[1] * tangent2;
 }
 
 
@@ -186,16 +186,18 @@ public :
 
         bool found = false;
         Sphere BestS = Spheres[0];
-        double bestdist = 10000;
+        double bestdist = 100000;
 
-        for (auto s : this->Spheres){
-            if((s.intersect(ray, intersection, normal))){
+        std::vector<Sphere>::iterator it1 = Spheres.begin();
+        while( it1 < Spheres.end()){
+            if((it1->intersect(ray, intersection, normal))){
                     found = true;
                 if ((intersection - ray.origin).norm() < bestdist){
-                    BestS = s;
+                    BestS = *it1;
                     bestdist = (intersection - ray.origin).norm();
                 }
             }
+            ++it1;
         }
 
         if ( ! found) {
@@ -203,7 +205,7 @@ public :
         }
 
         BestS.intersect(ray, intersection, normal);
-        intersection = intersection + pow(10, -12)*normal;
+        intersection = intersection + pow(10, -4)*normal;
         Vector LP = light - intersection;
 
         if(BestS.ismirror && depth > 0){
