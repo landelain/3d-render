@@ -96,7 +96,7 @@ public:
         }
     }
 
-    bool MollerTrumblore(const Ray& ray, const Vector& A, const Vector& B, const Vector& C, double& t){
+    bool MollerTrumblore(const Ray& ray, const Vector& A, const Vector& B, const Vector& C, double& t, double& alpha, double& beta, double& gamma){
         Vector O = ray.origin;
         Vector u = ray.direction;
         Vector e1 = B - A;
@@ -104,15 +104,15 @@ public:
         Vector N = cross(e1, e2);
         Vector AOu = cross((A - O), u);
         double uN = dot(u, N);
-        double beta = dot(e2, AOu)/uN;
+        beta = dot(e2, AOu)/uN;
         if(beta > 1 || beta < 0){
             return false;
         }
-        double gamma = -1 * dot(e1, AOu)/uN;
+        gamma = -1 * dot(e1, AOu)/uN;
         if(gamma > 1 || gamma < 0){
             return false;
         }
-        double alpha = 1 - beta - gamma;
+        alpha = 1 - beta - gamma;
         if(alpha > 1 || alpha < 0){
             return false;
         }
@@ -125,21 +125,34 @@ public:
 
     bool intersect(const Ray& ray, Vector& point, Vector& normal) override {
         std::vector<TriangleIndices>::iterator it = tmesh.indices.begin();
+        double bestt = 10000;
+        double alpha, beta, gamma;
+        Vector bestNormal;
         double t;
         bool found = false;
 
         while(it < tmesh.indices.end()){
-            Vector A = tmesh.vertices[(*it).vtxi];
-            Vector B = tmesh.vertices[(*it).vtxj];
-            Vector C = tmesh.vertices[(*it).vtxk];
-            if(MollerTrumblore(ray, A, B, C, t)){
-                point = ray.origin + t*ray.direction;
-                normal = point - ray.origin;
-                normal.normalize();
-                return true;
+            Vector A = tmesh.vertices[it->vtxi];
+            Vector B = tmesh.vertices[it->vtxj];
+            Vector C = tmesh.vertices[it->vtxk];
+
+            if(MollerTrumblore(ray, A, B, C, t, alpha, beta, gamma)){
+                if (t < bestt){
+                    bestt = t;
+                    bestNormal = alpha * tmesh.normals[it->ni] + beta * tmesh.normals[it->nj] + gamma * tmesh.normals[it->nk];
+                } 
+                found = true;
             }
             ++it;
+        }  
+
+        if(! found){
+            return false;
         }
+
+        point = ray.origin + bestt*ray.direction;
+        normal = bestNormal;
+        normal.normalize();
         return false;
     }
 
