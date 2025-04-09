@@ -7,6 +7,8 @@
 #define STB_IMAGE_IMPLEMENTATION
 #include "stb_image.h"
 
+#include "obj_reader.cpp"
+
 #include <iostream>
 #include <random>
 
@@ -162,6 +164,19 @@ void random_vector(const Vector& normal, Vector& random){
     random = coor[2] * normal + coor[0] * tangent + coor[1] * tangent2;
 }
 
+void MollerTrumblore(const Ray& ray, const Vector& A, const Vector& B, const Vector& C, double& alpha, double& beta, double& gamma, double& t){
+    Vector O = ray.origin;
+    Vector u = ray.direction;
+    Vector e1 = B - A;
+    Vector e2 = C - A;
+    Vector N = cross(e1, e2);
+    Vector AOu = cross((A - O), u);
+    double uN = dot(u, N);
+    beta = dot(e2, AOu)/uN;
+    gamma = dot(e1, AOu)/uN;
+    alpha = 1 - beta - gamma;
+    t = dot((A-O), N)/uN;
+}
 
 class Scene {
 public :
@@ -315,7 +330,7 @@ int main() {
 
 		}
 	}
-	stbi_write_png("image2.png", W, H, 3, &image[0], 0);
+	stbi_write_png("image3.png", W, H, 3, &image[0], 0);
 
 	return 0;
 }
