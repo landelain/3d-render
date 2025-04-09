@@ -20,56 +20,6 @@ std::random_device rd;
 std::mt19937 gen(rd());
 std::uniform_real_distribution<double> unif(0.0, 1.0);
 
-class Vector {
-public:
-	explicit Vector(double x = 0, double y = 0, double z = 0) {
-		data[0] = x;
-		data[1] = y;
-		data[2] = z;
-	}
-	double norm2() const {
-		return data[0] * data[0] + data[1] * data[1] + data[2] * data[2];
-	}
-	double norm() const {
-		return sqrt(norm2());
-	}
-	void normalize() {
-		double n = norm();
-		data[0] /= n;
-		data[1] /= n;
-		data[2] /= n;
-	}
-	double operator[](int i) const { return data[i]; };
-	double& operator[](int i) { return data[i]; };
-	double data[3];
-};
-
-Vector operator+(const Vector& a, const Vector& b) {
-	return Vector(a[0] + b[0], a[1] + b[1], a[2] + b[2]);
-}
-Vector operator-(const Vector& a, const Vector& b) {
-	return Vector(a[0] - b[0], a[1] - b[1], a[2] - b[2]);
-}
-Vector operator*(const double a, const Vector& b) {
-	return Vector(a*b[0], a*b[1], a*b[2]);
-}
-Vector operator*(const Vector& a, const double b) {
-	return Vector(a[0]*b, a[1]*b, a[2]*b);
-}
-Vector operator/(const Vector& a, const double b) {
-	return Vector(a[0] / b, a[1] / b, a[2] / b);
-}
-double dot(const Vector& a, const Vector& b) {
-	return a[0] * b[0] + a[1] * b[1] + a[2] * b[2];
-}
-Vector cross(const Vector& a, const Vector& b) {
-	return Vector(a[1] * b[2] - a[2] * b[1], a[2] * b[0] - a[0] * b[2], a[0] * b[1] - a[1] * b[0]);
-}
-Vector operator*(const Vector& a, const Vector& b){
-    return Vector(a[0] * b[0], a[1] * b[1], a[2] * b[2]);
-}
-
-
 class Ray {
 public:
 	Vector origin;
@@ -82,21 +32,31 @@ public:
 
 };
 
-class Sphere {
+class Object {
 public:
-    Vector origin;
-    double radius;
     Vector albedo;
     bool ismirror;
 
-	Sphere(const Vector& o, const double& r, const Vector& a, const bool& im = false){
-        origin = o;
-        radius = r;
+    Object(const Vector& a, const bool& im = false){
         albedo = a;
         ismirror = im;
     }
 
-    bool intersect(const Ray& ray, Vector& point, Vector& normal){
+    virtual bool intersect(const Ray& ray, Vector& point, Vector& normal) = 0;
+
+};
+
+class Sphere : public Object{
+public:
+    Vector origin;
+    double radius;
+
+	Sphere(const Vector& o, const double& r, const Vector& a, const bool& im = false) : Object(a, im){
+        origin = o;
+        radius = r;
+    }
+
+    bool intersect(const Ray& ray, Vector& point, Vector& normal) override {
         double delta = (dot(ray.direction, ray.origin - origin))*(dot(ray.direction, ray.origin - origin)) - ( (ray.origin - origin).norm2() - sqr(radius));
         if(delta < 0){ return false; }
         double dotprod = dot(ray.direction, origin - ray.origin);
@@ -115,6 +75,74 @@ public:
         normal.normalize();
         return true;
     }
+};
+
+class Mesh : public Object {
+public: 
+    TriangleMesh tmesh;
+
+    Mesh(const char* l, const Vector& a, const bool& im = false) : Object(a, im) {
+        tmesh.readOBJ(l);
+    }
+
+    void resize(Vector& shift, double coef){
+        std::vector<Vector>::iterator it = tmesh.vertices.begin();
+        while(it < tmesh.vertices.end()){
+
+            (*it)[0] = ( (*it)[0] - shift[0]) * coef;
+            (*it)[1] = ( (*it)[1] - shift[1]) * coef;
+            (*it)[2] = ( (*it)[2] - shift[2]) * coef;
+            ++it;
+        }
+    }
+
+    bool MollerTrumblore(const Ray& ray, const Vector& A, const Vector& B, const Vector& C, double& t){
+        Vector O = ray.origin;
+        Vector u = ray.direction;
+        Vector e1 = B - A;
+        Vector e2 = C - A;
+        Vector N = cross(e1, e2);
+        Vector AOu = cross((A - O), u);
+        double uN = dot(u, N);
+        double beta = dot(e2, AOu)/uN;
+        if(beta > 1 || beta < 0){
+            return false;
+        }
+        double gamma = -1 * dot(e1, AOu)/uN;
+        if(gamma > 1 || gamma < 0){
+            return false;
+        }
+        double alpha = 1 - beta - gamma;
+        if(alpha > 1 || alpha < 0){
+            return false;
+        }
+        t = dot((A-O), N)/uN;
+        if(t < 0){
+            return false;
+        }
+        return true;
+    }
+
+    bool intersect(const Ray& ray, Vector& point, Vector& normal) override {
+        std::vector<TriangleIndices>::iterator it = tmesh.indices.begin();
+        double t;
+        bool found = false;
+
+        while(it < tmesh.indices.end()){
+            Vector A = tmesh.vertices[(*it).vtxi];
+            Vector B = tmesh.vertices[(*it).vtxj];
+            Vector C = tmesh.vertices[(*it).vtxk];
+            if(MollerTrumblore(ray, A, B, C, t)){
+                point = ray.origin + t*ray.direction;
+                normal = point - ray.origin;
+                normal.normalize();
+                return true;
+            }
+            ++it;
+        }
+        return false;
+    }
+
 };
 
 void get_tangent(const Vector& normal, Vector& tangent){
@@ -164,34 +192,20 @@ void random_vector(const Vector& normal, Vector& random){
     random = coor[2] * normal + coor[0] * tangent + coor[1] * tangent2;
 }
 
-void MollerTrumblore(const Ray& ray, const Vector& A, const Vector& B, const Vector& C, double& alpha, double& beta, double& gamma, double& t){
-    Vector O = ray.origin;
-    Vector u = ray.direction;
-    Vector e1 = B - A;
-    Vector e2 = C - A;
-    Vector N = cross(e1, e2);
-    Vector AOu = cross((A - O), u);
-    double uN = dot(u, N);
-    beta = dot(e2, AOu)/uN;
-    gamma = dot(e1, AOu)/uN;
-    alpha = 1 - beta - gamma;
-    t = dot((A-O), N)/uN;
-}
-
 class Scene {
 public :
     Vector light;
     double intensity;
-    std::vector<Sphere> Spheres;
+    std::vector<Object*> Objects;
 
-    Scene(Vector& l, double& i, std::vector<Sphere>& S) {
+    Scene(Vector& l, double& i, std::vector<Object*>& Ob) {
         light = l;
         intensity = i;
-        Spheres = S;
+        Objects = Ob;
     }
 
-    void add(Sphere& S) {
-        Spheres.push_back(S);
+    void add(Object* Ob) {
+        Objects.push_back(Ob);
     }
 
     Vector getColor(const Ray& ray, int depth, int depth2) {
@@ -200,15 +214,15 @@ public :
         Vector normal;   
 
         bool found = false;
-        Sphere BestS = Spheres[0];
+        Object* BestO = Objects[0];
         double bestdist = 100000;
 
-        std::vector<Sphere>::iterator it1 = Spheres.begin();
-        while( it1 < Spheres.end()){
-            if((it1->intersect(ray, intersection, normal))){
+        std::vector<Object*>::iterator it1 = Objects.begin();
+        while( it1 < Objects.end()){
+            if(((*it1)->intersect(ray, intersection, normal))){
                     found = true;
                 if ((intersection - ray.origin).norm() < bestdist){
-                    BestS = *it1;
+                    BestO = *it1;
                     bestdist = (intersection - ray.origin).norm();
                 }
             }
@@ -219,11 +233,11 @@ public :
             return Vector(100,100,100);
         }
 
-        BestS.intersect(ray, intersection, normal);
+        BestO->intersect(ray, intersection, normal);
         intersection = intersection + pow(10, -4)*normal;
         Vector LP = light - intersection;
 
-        if(BestS.ismirror && depth > 0){
+        if(BestO->ismirror && depth > 0){
             Vector reflection_direction = ray.direction - 2*dot(ray.direction, normal) * normal;
             Ray reflection_ray(intersection, reflection_direction);
             Vector color = getColor(reflection_ray, depth-1, depth2);
@@ -234,9 +248,9 @@ public :
         Vector intersection2;
         Vector normal2;
         bool shadow = false;
-        std::vector<Sphere>::iterator it2 = Spheres.begin();
-        while(it2 < Spheres.end()){
-            bool flag = it2->intersect(shadow_ray, intersection2, normal2);
+        std::vector<Object*>::iterator it2 = Objects.begin();
+        while(it2 < Objects.end()){
+            bool flag = (*it2)->intersect(shadow_ray, intersection2, normal2);
             if(flag && (LP.norm() > (intersection2 - intersection).norm())){
                 shadow = true;
                 break;
@@ -248,7 +262,7 @@ public :
         if (! shadow){
             double dotprod = dot(normal,LP/LP.norm());
             if (dotprod < 0){return Vector(100,100,100); }
-            color =  intensity/(4*pi*LP.norm2()) * BestS.albedo/pi * dotprod;
+            color =  intensity/(4*pi*LP.norm2()) * BestO->albedo/pi * dotprod;
         }
 
         if(depth2 <= 0 ){return color;}
@@ -256,7 +270,7 @@ public :
         Vector random;
         random_vector(normal, random);
         Ray rec_ray(intersection, random);
-        color =  color + BestS.albedo * getColor(rec_ray, depth, depth2-1);
+        color =  color + BestO->albedo * getColor(rec_ray, depth, depth2-1);
     
         return color;
     };
@@ -269,8 +283,8 @@ int main() {
 	int H = 512;
     Vector camera(0, 0, 55);
     int max_depth = 3;
-    int light_depth = 4;
-    int N = 50;
+    int light_depth = 0;
+    int N = 10;
 
     double fov = 60 * pi / 180;
     Vector albedo(1, 0, 0);
@@ -286,28 +300,27 @@ int main() {
     Sphere ceil(Vector(0, 1000, 0), bigradius, Vector(0.2, 0.5, 0.9));
     Sphere floor(Vector(0, -1000, 0), 990, Vector(0.3, 0.4, 0.7));
     Sphere back(Vector(0, 0, 1000), bigradius, Vector(0.9, 0.4, 0.3), true);
-    std::vector<Sphere> room;
+    std::vector<Object*> room;
     Scene scene(light, intensity, room);
 
-    scene.add(ceil);
-    scene.add(floor);
-    scene.add(front);
-    scene.add(left);
-    scene.add(right);
-    scene.add(back);
-    scene.add(S);
+    scene.add(&ceil);
+    scene.add(&floor);
+    scene.add(&front);
+    scene.add(&left);
+    scene.add(&right);
+    scene.add(&back);
+    //scene.add(&S);
     //scene.add(S2);
 
+    Mesh cat_mesh("cat_model/cat.obj", Vector(0, 0, 0));
+    Vector resize(28., 20., 10.);
+    cat_mesh.resize(resize, 3);
+    scene.add(&cat_mesh);
+
 	std::vector<unsigned char> image(W * H * 3, 0);
-    //int count = 0;
     #pragma omp parallel for collapse(2) schedule(guided)
 	for (int i = 0; i < H; i++) {
 		for (int j = 0; j < W; j++) {
-
-            // if(i == 0){
-            //     count += 1;
-            //     std::cout << (1. * count)/(1. * W) * 100 << "%" << std::endl;
-            // }
 
             Vector color(0,0,0);
             double z = -W/(2.*tan(fov/2));
