@@ -96,24 +96,27 @@ public:
         }
     }
 
-    bool MollerTrumblore(const Ray& ray, const Vector& A, const Vector& B, const Vector& C, double& t, double& alpha, double& beta, double& gamma){
+    bool MollerTrumbore(const Ray& ray, const Vector& A, const Vector& B, const Vector& C, double& t, double& alpha, double& beta, double& gamma){
         Vector O = ray.origin;
         Vector u = ray.direction;
         Vector e1 = B - A;
         Vector e2 = C - A;
         Vector N = cross(e1, e2);
         Vector AOu = cross((A - O), u);
+        double eps = 1e-8;
         double uN = dot(u, N);
+        //if(uN < eps){return false;}
+
         beta = dot(e2, AOu)/uN;
-        if(beta > 1 || beta < 0){
+        if(beta > 1 + eps || beta < -eps){
             return false;
         }
-        gamma = -1 * dot(e1, AOu)/uN;
-        if(gamma > 1 || gamma < 0){
+        gamma = -dot(e1, AOu)/uN;
+        if(gamma > 1 + eps || gamma < -eps){
             return false;
         }
         alpha = 1 - beta - gamma;
-        if(alpha > 1 || alpha < 0){
+        if(alpha > 1 + eps || alpha < -eps){
             return false;
         }
         t = dot((A-O), N)/uN;
@@ -126,9 +129,8 @@ public:
     bool intersect(const Ray& ray, Vector& point, Vector& normal) override {
         std::vector<TriangleIndices>::iterator it = tmesh.indices.begin();
         double bestt = 10000;
-        double alpha, beta, gamma;
+        double alpha, beta, gamma, t;
         Vector bestNormal;
-        double t;
         bool found = false;
 
         while(it < tmesh.indices.end()){
@@ -136,12 +138,12 @@ public:
             Vector B = tmesh.vertices[it->vtxj];
             Vector C = tmesh.vertices[it->vtxk];
 
-            if(MollerTrumblore(ray, A, B, C, t, alpha, beta, gamma)){
+            if(MollerTrumbore(ray, A, B, C, t, alpha, beta, gamma)){
+                found = true;
                 if (t < bestt){
                     bestt = t;
                     bestNormal = alpha * tmesh.normals[it->ni] + beta * tmesh.normals[it->nj] + gamma * tmesh.normals[it->nk];
                 } 
-                found = true;
             }
             ++it;
         }  
@@ -152,8 +154,8 @@ public:
 
         point = ray.origin + bestt*ray.direction;
         normal = bestNormal;
-        normal.normalize();
-        return false;
+        normal.normalize();     
+        return true;
     }
 
 };
@@ -274,7 +276,7 @@ public :
         Vector color(0,0,0);
         if (! shadow){
             double dotprod = dot(normal,LP/LP.norm());
-            if (dotprod < 0){return Vector(100,100,100); }
+            if (dotprod < 0){return Vector(100000,0,0); }
             color =  intensity/(4*pi*LP.norm2()) * BestO->albedo/pi * dotprod;
         }
 
@@ -295,7 +297,7 @@ int main() {
 	int W = 512;
 	int H = 512;
     Vector camera(0, 0, 55);
-    int max_depth = 3;
+    int max_depth = 0;
     int light_depth = 0;
     int N = 10;
 
@@ -316,19 +318,21 @@ int main() {
     std::vector<Object*> room;
     Scene scene(light, intensity, room);
 
-    scene.add(&ceil);
+    Mesh cat_mesh("cat_model/cat.obj", Vector(0, 0, 0));
+    Vector resize(0, -10, 0);
+    cat_mesh.resize(resize, 0.6);
+    scene.add(&cat_mesh);
+    
+    //scene.add(&ceil);
     scene.add(&floor);
     scene.add(&front);
-    scene.add(&left);
-    scene.add(&right);
-    scene.add(&back);
+    //scene.add(&left);
+    //scene.add(&right);
+    //scene.add(&back);
     //scene.add(&S);
     //scene.add(S2);
 
-    Mesh cat_mesh("cat_model/cat.obj", Vector(0, 0, 0));
-    Vector resize(28., 20., 10.);
-    cat_mesh.resize(resize, 3);
-    scene.add(&cat_mesh);
+    
 
 	std::vector<unsigned char> image(W * H * 3, 0);
     #pragma omp parallel for collapse(2) schedule(guided)
@@ -356,7 +360,7 @@ int main() {
 
 		}
 	}
-	stbi_write_png("image3.png", W, H, 3, &image[0], 0);
+	stbi_write_png("image4.png", W, H, 3, &image[0], 0);
 
 	return 0;
 }
