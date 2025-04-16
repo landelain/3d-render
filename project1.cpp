@@ -14,7 +14,7 @@
 
 #define pi  3.14159
 
-double sqr(double& a ){ return a*a;};
+double sqr(double a ){ return a*a;};
 
 std::random_device rd;
 std::mt19937 gen(rd());
@@ -77,14 +77,73 @@ public:
     }
 };
 
+class BoundingBox {
+public:
+
+    Vector max, min;
+
+    BoundingBox(){}
+
+    BoundingBox(Vector& max, Vector& min){
+        this->max = max;
+        this->min = min;
+    }
+
+    void getBox(TriangleMesh& tmesh){
+        max = Vector(-1e9, -1e9, -1e9);
+        min = Vector(1e9, 1e9, 1e9);
+
+        std::vector<Vector>::iterator it1 = tmesh.vertices.begin();
+        std::vector<Vector>::iterator end = tmesh.vertices.end();
+        while( it1 < end){
+            max[0] = std::max(max[0], (*it1)[0]);
+            max[1] = std::max(max[1], (*it1)[1]);
+            max[2] = std::max(max[2], (*it1)[2]);
+            
+            min[0] = std::min(min[0], (*it1)[0]);
+            min[1] = std::min(min[1], (*it1)[1]);
+            min[2] = std::min(min[2], (*it1)[2]);
+
+            ++it1;
+        }
+    }
+
+    bool intersect(const Ray& ray){
+        double tx1 = (min[0] - ray.origin[0])/ray.direction[0];
+        double tx2 = (max[0] - ray.origin[0])/ray.direction[0];
+        double txmin = std::min(tx1, tx2);
+        double txmax = std::max(tx1, tx2);
+
+        double ty1 = (min[1] - ray.origin[1])/ray.direction[1];
+        double ty2 = (max[1] - ray.origin[1])/ray.direction[1];
+        double tymin = std::min(ty1, ty2);
+        double tymax = std::max(ty1, ty2);
+
+        double tz1 = (min[2] - ray.origin[2])/ray.direction[2];
+        double tz2 = (max[2] - ray.origin[2])/ray.direction[2];
+        double tzmin = std::min(tz1, tz2);
+        double tzmax = std::max(tz1, tz2);
+
+        double tmax = std::min(txmax, tymax);
+        double minmax = std::min(tmax, tzmax);
+        double tmin = std::max(txmin, tymin);
+        double maxmin = std::max(tmin, tzmin);
+        if(minmax > maxmin){
+            return true;
+        }
+        return false;
+    }
+};
+
 class Mesh : public Object {
 public: 
     TriangleMesh tmesh;
+    BoundingBox box;
 
     Mesh(const char* l, const Vector& a, const bool& im = false) : Object(a, im) {
         tmesh.readOBJ(l);
+        box.getBox(tmesh);
     }
-
     void resize(Vector& shift, double coef){
         std::vector<Vector>::iterator it = tmesh.vertices.begin();
         while(it < tmesh.vertices.end()){
@@ -94,6 +153,7 @@ public:
             (*it)[2] = ( (*it)[2] - shift[2]) * coef;
             ++it;
         }
+        box.getBox(tmesh);
     }
 
     bool MollerTrumbore(const Ray& ray, const Vector& A, const Vector& B, const Vector& C, double& t, double& alpha, double& beta, double& gamma){
@@ -127,11 +187,17 @@ public:
     }
 
     bool intersect(const Ray& ray, Vector& point, Vector& normal) override {
+
+        if(! box.intersect(ray)){
+            return false;
+        }
+
         std::vector<TriangleIndices>::iterator it = tmesh.indices.begin();
         double bestt = 10000;
         double alpha, beta, gamma, t;
         Vector bestNormal;
         bool found = false;
+        Vector bestPoint;
 
         while(it < tmesh.indices.end()){
             Vector A = tmesh.vertices[it->vtxi];
@@ -142,6 +208,7 @@ public:
                 found = true;
                 if (t < bestt){
                     bestt = t;
+                    bestPoint = alpha * A + beta * B + gamma * C;
                     bestNormal = alpha * tmesh.normals[it->ni] + beta * tmesh.normals[it->nj] + gamma * tmesh.normals[it->nk];
                 } 
             }
@@ -152,7 +219,7 @@ public:
             return false;
         }
 
-        point = ray.origin + bestt*ray.direction;
+        point = bestPoint;
         normal = bestNormal;
         normal.normalize();     
         return true;
@@ -276,7 +343,7 @@ public :
         Vector color(0,0,0);
         if (! shadow){
             double dotprod = dot(normal,LP/LP.norm());
-            if (dotprod < 0){return Vector(100000,0,0); }
+            if (dotprod < 0){return Vector(0,0,0); }
             color =  intensity/(4*pi*LP.norm2()) * BestO->albedo/pi * dotprod;
         }
 
@@ -294,12 +361,15 @@ public :
 
 
 int main() {
-	int W = 512;
-	int H = 512;
+	//int W = 512;
+	//int H = 512;
+    int W = 256;
+    int H = 256;
+
     Vector camera(0, 0, 55);
-    int max_depth = 0;
-    int light_depth = 0;
-    int N = 10;
+    int max_depth = 2;
+    int light_depth = 5;
+    int N = 8;
 
     double fov = 60 * pi / 180;
     Vector albedo(1, 0, 0);
@@ -318,21 +388,19 @@ int main() {
     std::vector<Object*> room;
     Scene scene(light, intensity, room);
 
-    Mesh cat_mesh("cat_model/cat.obj", Vector(0, 0, 0));
-    Vector resize(0, -10, 0);
+    Mesh cat_mesh("cat_model/cat.obj", Vector(0.8,0.8,0.8), true);
+    Vector resize(0, 15, 0);
     cat_mesh.resize(resize, 0.6);
     scene.add(&cat_mesh);
     
-    //scene.add(&ceil);
+    scene.add(&ceil);
     scene.add(&floor);
     scene.add(&front);
-    //scene.add(&left);
-    //scene.add(&right);
-    //scene.add(&back);
+    scene.add(&left);
+    scene.add(&right);
+    scene.add(&back);
     //scene.add(&S);
     //scene.add(S2);
-
-    
 
 	std::vector<unsigned char> image(W * H * 3, 0);
     #pragma omp parallel for collapse(2) schedule(guided)
@@ -354,9 +422,9 @@ int main() {
             }
             color = color / N;
             
-            image[(i * W + j) * 3 + 0] = std::max(0., std::min(255., std::pow(color.data[0], 1/2.2)));
-            image[(i * W + j) * 3 + 1] = std::max(0., std::min(255., std::pow(color.data[1], 1/2.2)));
-            image[(i * W + j) * 3 + 2] = std::max(0., std::min(255., std::pow(color.data[2], 1/2.2)));
+            image[(i * W + j) * 3 + 0] = std::max(0., std::min(255., std::pow(color.data[0], 1./2.2)));
+            image[(i * W + j) * 3 + 1] = std::max(0., std::min(255., std::pow(color.data[1], 1./2.2)));
+            image[(i * W + j) * 3 + 2] = std::max(0., std::min(255., std::pow(color.data[2], 1./2.2)));
 
 		}
 	}
