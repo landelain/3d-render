@@ -89,12 +89,12 @@ public:
         this->min = min;
     }
 
-    void getBox(TriangleMesh& tmesh){
+    void getBox(TriangleMesh& tmesh, int first, int last){
         max = Vector(-1e9, -1e9, -1e9);
         min = Vector(1e9, 1e9, 1e9);
 
-        std::vector<Vector>::iterator it1 = tmesh.vertices.begin();
-        std::vector<Vector>::iterator end = tmesh.vertices.end();
+        std::vector<TriangleIndices>::iterator it1 = tmesh.indices.begin();
+        std::vector<TriangleIndices>::iterator end = tmesh.indices.end();
         while( it1 < end){
             max[0] = std::max(max[0], (*it1)[0]);
             max[1] = std::max(max[1], (*it1)[1]);
@@ -135,15 +135,39 @@ public:
     }
 };
 
+class BVHnode {
+public:
+    BoundingBox box;
+    BVHnode *left, *right;
+    int first, last;
+
+    BVHnode(){
+
+    }
+    BVHnode(BVHnode* c, int first, int last){
+        this->first = first;
+        this->last = last;
+    }
+
+    void getBox(TriangleMesh& tmesh){
+        box.getBox(tmesh, first, last);
+    }
+};
+
+
 class Mesh : public Object {
 public: 
     TriangleMesh tmesh;
     BoundingBox box;
+    BVHnode* root;
 
     Mesh(const char* l, const Vector& a, const bool& im = false) : Object(a, im) {
         tmesh.readOBJ(l);
-        box.getBox(tmesh);
+        box.getBox(tmesh, 0, tmesh.indices.size());
+        construct(root, 0, tmesh.indices.size());
+        std::cout << "passed" << std::endl;
     }
+
     void resize(Vector& shift, double coef){
         std::vector<Vector>::iterator it = tmesh.vertices.begin();
         while(it < tmesh.vertices.end()){
@@ -153,8 +177,48 @@ public:
             (*it)[2] = ( (*it)[2] - shift[2]) * coef;
             ++it;
         }
-        box.getBox(tmesh);
+        box.getBox(tmesh, 0, tmesh.indices.size());
     }
+
+
+    void construct(BVHnode* c, int first, int last){
+    
+    //std::cout << last-first << std::endl;
+
+    if(last-first <= (tmesh.indices.size()*0.3)){
+        c = nullptr;
+        return;
+    }
+
+    c = new BVHnode();
+
+    c->first = first;
+    c->last = last;
+    c->getBox(tmesh);
+    
+    int axis = 0;
+    for(int i = 1; i<3; i++){
+        if(std::abs(c->box.max[i] - c->box.min[i]) > std::abs(c->box.max[axis] - c->box.min[axis])){
+            axis = i;
+        }
+    }
+
+    double M = (c->box.max[axis] + c->box.min[axis])/2;
+    int pivot = first;
+    for(int i = first; i < last; i++){
+        Vector barycenter = (tmesh.vertices[tmesh.indices[i].vtxi] + tmesh.vertices[tmesh.indices[i].vtxj] + tmesh.vertices[tmesh.indices[i].vtxk])/3;
+        if( barycenter[axis] < M){
+            std::cout << "happens" << std::endl;
+            TriangleIndices temp = tmesh.indices[i];
+            tmesh.indices[i] = tmesh.indices[pivot];
+            tmesh.indices[pivot] = temp;
+            pivot++;
+        }
+    }
+    
+    construct(c->left, first, pivot);
+    construct(c->right, pivot, last);
+}
 
     bool MollerTrumbore(const Ray& ray, const Vector& A, const Vector& B, const Vector& C, double& t, double& alpha, double& beta, double& gamma){
         Vector O = ray.origin;
@@ -188,31 +252,63 @@ public:
 
     bool intersect(const Ray& ray, Vector& point, Vector& normal) override {
 
+        // intersection with the big Bounding Box
         if(! box.intersect(ray)){
             return false;
         }
 
-        std::vector<TriangleIndices>::iterator it = tmesh.indices.begin();
+        // intersection with the node Boxes
+        printf("hey");
+        BVHnode* nodes[100];
+        int idx = 0;
+        nodes[idx] = root;
+
+        while(idx >= 0){
+            BVHnode* c = nodes[idx];
+            idx--;
+            if(c->left != nullptr){
+                if(c->left->box.intersect(ray)){
+                    idx++;
+                    nodes[idx] = c->left;
+                }
+            }
+            if(c->right != nullptr)
+            {
+                if(c->right->box.intersect(ray)){
+                    idx++;
+                    nodes[idx] = c->right;
+                }
+            }
+            if(c->left == nullptr && c->right == nullptr)
+            {
+                break;
+            }
+            std::cout << idx << std::endl;
+        }   
+
+        int first = nodes[idx+1]->first;
+        int last = nodes[idx+1]->last;
+
         double bestt = 10000;
         double alpha, beta, gamma, t;
         Vector bestNormal;
         bool found = false;
         Vector bestPoint;
 
-        while(it < tmesh.indices.end()){
-            Vector A = tmesh.vertices[it->vtxi];
-            Vector B = tmesh.vertices[it->vtxj];
-            Vector C = tmesh.vertices[it->vtxk];
+        for(int i = first; i < last; i++){
+            TriangleIndices ti = tmesh.indices[i];
+            Vector A = tmesh.vertices[ti.vtxi];
+            Vector B = tmesh.vertices[ti.vtxj];
+            Vector C = tmesh.vertices[ti.vtxk];
 
             if(MollerTrumbore(ray, A, B, C, t, alpha, beta, gamma)){
                 found = true;
                 if (t < bestt){
                     bestt = t;
                     bestPoint = alpha * A + beta * B + gamma * C;
-                    bestNormal = alpha * tmesh.normals[it->ni] + beta * tmesh.normals[it->nj] + gamma * tmesh.normals[it->nk];
+                    bestNormal = alpha * tmesh.normals[ti.ni] + beta * tmesh.normals[ti.nj] + gamma * tmesh.normals[ti.nk];
                 } 
             }
-            ++it;
         }  
 
         if(! found){
@@ -368,8 +464,8 @@ int main() {
 
     Vector camera(0, 0, 55);
     int max_depth = 2;
-    int light_depth = 5;
-    int N = 8;
+    int light_depth = 3;
+    int N = 10;
 
     double fov = 60 * pi / 180;
     Vector albedo(1, 0, 0);
@@ -388,10 +484,10 @@ int main() {
     std::vector<Object*> room;
     Scene scene(light, intensity, room);
 
-    Mesh cat_mesh("cat_model/cat.obj", Vector(0.8,0.8,0.8), true);
+    Mesh* cat_mesh = new Mesh("cat_model/cat.obj", Vector(0.8,0.8,0.8));
     Vector resize(0, 15, 0);
-    cat_mesh.resize(resize, 0.6);
-    scene.add(&cat_mesh);
+    cat_mesh->resize(resize, 0.4);
+    scene.add(cat_mesh);
     
     scene.add(&ceil);
     scene.add(&floor);
@@ -430,5 +526,36 @@ int main() {
 	}
 	stbi_write_png("image4.png", W, H, 3, &image[0], 0);
 
+    delete cat_mesh;
 	return 0;
 }
+
+// std vector std vector double textures
+// std vector int texture W
+//  textureH
+
+// //load texture (char* file)
+// int W? H, C
+// unsigner char * texture = stbi_load(file, &W, &H, &C, 3)
+// textureW.pushback(W);
+// textureH.pushback
+// std vector double current_tex(W*H*3)
+// for i < W*H*3
+// curretn_text[i] = std::power(tex[i] /  255. , 2.2)
+// textures.push_back(current_text)
+
+// mesh.load_texture(filename)
+
+// return current albdedo at intersetc and not just albedo of the cat itself
+// vector UV = interpolation of the UV coordiantes (much like normal)
+// U = std::min(UV[0]*texturesW[indices[i].group] -1. , UV[0]*texturesW[indices[i].group]); same min for the height after and use max than 0
+// V = (1-UV[1])*texturesH[indices[i].group]; maybe 1- maybe not
+// texH = texturesH[indices[i].group]
+// texW = same
+// albedo = Vector( textures[indicies[i].group][V*texH + U + 0], textures[indicies[i].group][V*texH + U + 1], textures[indicies[i].group][V*texH + U + 2]
+
+// dont forget that Mesh returns this albedo so OBject should also and so should Sphere
+
+
+
+
