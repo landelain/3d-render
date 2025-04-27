@@ -292,52 +292,52 @@ public:
         NodeStack stack;
         stack.push(root);
         BVHnode* c;
+        double bestt = 10000;
+        Vector bestNormal;
+        Vector bestPoint;
+        double alpha, beta, gamma, t;
+        bool found = false;
 
         while(! stack.isempty()){
             c = stack.pop();
             
-            if((! c->left) && (! c->right)){
-                break;
-            }
-            if(c->left->box.intersect(ray)){
+            if(c->left && c->left->box.intersect(ray)){
                 stack.push(c->left);
             }
-            if(c->right->box.intersect(ray)){
+            if(c->right && c->right->box.intersect(ray)){
                 stack.push(c->right);
+            }
+
+            if((! c->left) && (! c->right)){
+                for(int i = c->first; i < c->last; i++){
+                    Vector A = tmesh.vertices[tmesh.indices[i].vtxi];
+                    Vector B = tmesh.vertices[tmesh.indices[i].vtxj];
+                    Vector C = tmesh.vertices[tmesh.indices[i].vtxk];
+
+                    if(MollerTrumbore(ray, A, B, C, t, alpha, beta, gamma)){
+                        found = true;
+                        if (t < bestt){
+                            bestt = t;
+                            bestPoint = alpha * A + beta * B + gamma * C;
+                            bestNormal = alpha * tmesh.normals[tmesh.indices[i].ni] 
+                            + beta * tmesh.normals[tmesh.indices[i].nj] 
+                            + gamma * tmesh.normals[tmesh.indices[i].nk];
+                        } 
+                    }
+                }  
             }
             
         }   
 
-        double bestt = 10000;
-        double alpha, beta, gamma, t;
-        Vector bestNormal;
-        bool found = false;
-        Vector bestPoint;
-
-        for(int i = c->first; i < c->last; i++){
-            Vector A = tmesh.vertices[tmesh.indices[i].vtxi];
-            Vector B = tmesh.vertices[tmesh.indices[i].vtxj];
-            Vector C = tmesh.vertices[tmesh.indices[i].vtxk];
-
-            if(MollerTrumbore(ray, A, B, C, t, alpha, beta, gamma)){
-                found = true;
-                if (t < bestt){
-                    bestt = t;
-                    bestPoint = alpha * A + beta * B + gamma * C;
-                    bestNormal = alpha * tmesh.normals[tmesh.indices[i].ni] 
-                    + beta * tmesh.normals[tmesh.indices[i].nj] 
-                    + gamma * tmesh.normals[tmesh.indices[i].nk];
-                } 
-            }
-        }  
-
         if(! found){
+            //std::cout << "A" << std::endl;
             return false;
         }
 
+        //std::cout << "B" << std::endl;
         point = bestPoint;
         normal = bestNormal;
-        normal.normalize();     
+        normal.normalize();
         return true;
     }
 
@@ -544,7 +544,7 @@ int main() {
 
 		}
 	}
-	stbi_write_png("image6.png", W, H, 3, &image[0], 0);
+	stbi_write_png("image4.png", W, H, 3, &image[0], 0);
 
     delete cat_mesh;
 	return 0;
