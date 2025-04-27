@@ -20,6 +20,7 @@ std::random_device rd;
 std::mt19937 gen(rd());
 std::uniform_real_distribution<double> unif(0.0, 1.0);
 
+
 class Ray {
 public:
 	Vector origin;
@@ -93,19 +94,21 @@ public:
         max = Vector(-1e9, -1e9, -1e9);
         min = Vector(1e9, 1e9, 1e9);
 
-        std::vector<TriangleIndices>::iterator it1 = tmesh.indices.begin();
-        std::vector<TriangleIndices>::iterator end = tmesh.indices.end();
-        while( it1 < end){
-            max[0] = std::max(max[0], (*it1)[0]);
-            max[1] = std::max(max[1], (*it1)[1]);
-            max[2] = std::max(max[2], (*it1)[2]);
-            
-            min[0] = std::min(min[0], (*it1)[0]);
-            min[1] = std::min(min[1], (*it1)[1]);
-            min[2] = std::min(min[2], (*it1)[2]);
+        for(int i = first ; i < last; i++){
 
-            ++it1;
+            Vector vert[3] = {tmesh.vertices[tmesh.indices[i].vtxi], tmesh.vertices[tmesh.indices[i].vtxj] , tmesh.vertices[tmesh.indices[i].vtxk] };
+
+            for(int i = 0; i < 3; i++){
+                max[0] = std::max(max[0], vert[i][0]);
+                max[1] = std::max(max[1], vert[i][1]);
+                max[2] = std::max(max[2], vert[i][2]);
+                
+                min[0] = std::min(min[0], vert[i][0]);
+                min[1] = std::min(min[1], vert[i][1]);
+                min[2] = std::min(min[2], vert[i][2]);
+            }
         }
+            
     }
 
     bool intersect(const Ray& ray){
@@ -142,11 +145,17 @@ public:
     int first, last;
 
     BVHnode(){
-
+        left = nullptr;
+        right = nullptr;
+        first = -1;
+        last = -1;
     }
+
     BVHnode(BVHnode* c, int first, int last){
         this->first = first;
         this->last = last;
+        left = nullptr;
+        right = nullptr;
     }
 
     void getBox(TriangleMesh& tmesh){
@@ -154,6 +163,31 @@ public:
     }
 };
 
+class NodeStack {
+public:
+    BVHnode* stack[100];
+    int idx;
+
+    NodeStack(){idx = -1;}
+
+    BVHnode* pop(){
+        if(idx < 0){
+            return nullptr;
+        }
+        return stack[idx--];
+    }
+
+    void push(BVHnode* node){
+        if(idx < 99){
+            stack[++idx] = node;
+        }
+    }
+
+    bool isempty(){
+        return idx == -1;
+    }
+    
+};
 
 class Mesh : public Object {
 public: 
@@ -164,8 +198,8 @@ public:
     Mesh(const char* l, const Vector& a, const bool& im = false) : Object(a, im) {
         tmesh.readOBJ(l);
         box.getBox(tmesh, 0, tmesh.indices.size());
+        root = new BVHnode();
         construct(root, 0, tmesh.indices.size());
-        std::cout << "passed" << std::endl;
     }
 
     void resize(Vector& shift, double coef){
@@ -181,44 +215,41 @@ public:
     }
 
 
-    void construct(BVHnode* c, int first, int last){
-    
-    //std::cout << last-first << std::endl;
+    void construct(BVHnode*& c, int first, int last){
 
-    if(last-first <= (tmesh.indices.size()*0.3)){
-        c = nullptr;
-        return;
-    }
-
-    c = new BVHnode();
-
-    c->first = first;
-    c->last = last;
-    c->getBox(tmesh);
-    
-    int axis = 0;
-    for(int i = 1; i<3; i++){
-        if(std::abs(c->box.max[i] - c->box.min[i]) > std::abs(c->box.max[axis] - c->box.min[axis])){
-            axis = i;
+        c->first = first;
+        c->last = last;
+        c->getBox(tmesh);
+        
+        int axis = 0;
+        for(int i = 1; i<3; i++){
+            if(std::abs(c->box.max[i] - c->box.min[i]) > std::abs(c->box.max[axis] - c->box.min[axis])){
+                axis = i;
+            }
         }
-    }
 
-    double M = (c->box.max[axis] + c->box.min[axis])/2;
-    int pivot = first;
-    for(int i = first; i < last; i++){
-        Vector barycenter = (tmesh.vertices[tmesh.indices[i].vtxi] + tmesh.vertices[tmesh.indices[i].vtxj] + tmesh.vertices[tmesh.indices[i].vtxk])/3;
-        if( barycenter[axis] < M){
-            std::cout << "happens" << std::endl;
-            TriangleIndices temp = tmesh.indices[i];
-            tmesh.indices[i] = tmesh.indices[pivot];
-            tmesh.indices[pivot] = temp;
-            pivot++;
+        double M = (c->box.max[axis] + c->box.min[axis])/2;
+        int pivot = first;
+        for(int i = first; i < last; i++){
+            Vector barycenter = 
+            (tmesh.vertices[tmesh.indices[i].vtxi] 
+            + tmesh.vertices[tmesh.indices[i].vtxj] 
+            + tmesh.vertices[tmesh.indices[i].vtxk])/3;
+            if( barycenter[axis] < M){
+                std::swap(tmesh.indices[i], tmesh.indices[pivot]);
+                pivot+= 1;
+            }
         }
+ 
+        if(std::min(pivot - first, last - pivot) <= (tmesh.indices.size()*0.01)){
+            return;
+        }
+
+        c->left = new BVHnode();
+        c->right = new BVHnode();
+        construct(c->left, first, pivot);
+        construct(c->right, pivot, last);
     }
-    
-    construct(c->left, first, pivot);
-    construct(c->right, pivot, last);
-}
 
     bool MollerTrumbore(const Ray& ray, const Vector& A, const Vector& B, const Vector& C, double& t, double& alpha, double& beta, double& gamma){
         Vector O = ray.origin;
@@ -258,36 +289,24 @@ public:
         }
 
         // intersection with the node Boxes
-        printf("hey");
-        BVHnode* nodes[100];
-        int idx = 0;
-        nodes[idx] = root;
+        NodeStack stack;
+        stack.push(root);
+        BVHnode* c;
 
-        while(idx >= 0){
-            BVHnode* c = nodes[idx];
-            idx--;
-            if(c->left != nullptr){
-                if(c->left->box.intersect(ray)){
-                    idx++;
-                    nodes[idx] = c->left;
-                }
-            }
-            if(c->right != nullptr)
-            {
-                if(c->right->box.intersect(ray)){
-                    idx++;
-                    nodes[idx] = c->right;
-                }
-            }
-            if(c->left == nullptr && c->right == nullptr)
-            {
+        while(! stack.isempty()){
+            c = stack.pop();
+            
+            if((! c->left) && (! c->right)){
                 break;
             }
-            std::cout << idx << std::endl;
+            if(c->left->box.intersect(ray)){
+                stack.push(c->left);
+            }
+            if(c->right->box.intersect(ray)){
+                stack.push(c->right);
+            }
+            
         }   
-
-        int first = nodes[idx+1]->first;
-        int last = nodes[idx+1]->last;
 
         double bestt = 10000;
         double alpha, beta, gamma, t;
@@ -295,18 +314,19 @@ public:
         bool found = false;
         Vector bestPoint;
 
-        for(int i = first; i < last; i++){
-            TriangleIndices ti = tmesh.indices[i];
-            Vector A = tmesh.vertices[ti.vtxi];
-            Vector B = tmesh.vertices[ti.vtxj];
-            Vector C = tmesh.vertices[ti.vtxk];
+        for(int i = c->first; i < c->last; i++){
+            Vector A = tmesh.vertices[tmesh.indices[i].vtxi];
+            Vector B = tmesh.vertices[tmesh.indices[i].vtxj];
+            Vector C = tmesh.vertices[tmesh.indices[i].vtxk];
 
             if(MollerTrumbore(ray, A, B, C, t, alpha, beta, gamma)){
                 found = true;
                 if (t < bestt){
                     bestt = t;
                     bestPoint = alpha * A + beta * B + gamma * C;
-                    bestNormal = alpha * tmesh.normals[ti.ni] + beta * tmesh.normals[ti.nj] + gamma * tmesh.normals[ti.nk];
+                    bestNormal = alpha * tmesh.normals[tmesh.indices[i].ni] 
+                    + beta * tmesh.normals[tmesh.indices[i].nj] 
+                    + gamma * tmesh.normals[tmesh.indices[i].nk];
                 } 
             }
         }  
@@ -524,7 +544,7 @@ int main() {
 
 		}
 	}
-	stbi_write_png("image4.png", W, H, 3, &image[0], 0);
+	stbi_write_png("image6.png", W, H, 3, &image[0], 0);
 
     delete cat_mesh;
 	return 0;
