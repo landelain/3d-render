@@ -34,14 +34,40 @@ public:
 
 };
 
+class Properties {
+public:
+    bool ismirror, istrans, fresnel;
+
+    Properties(){
+        ismirror = false;
+        istrans = false;
+        fresnel = false;
+    }
+
+    Properties(bool im, bool it, bool fr){
+        ismirror = im;
+        if (im){
+            istrans = false;
+            fresnel = false;
+            return;
+        }
+        istrans = it;
+        fresnel = fr;
+    }
+
+};
+
 class Object {
 public:
     Vector albedo;
-    bool ismirror;
+    bool ismirror, istrans, fresnel;
 
-    Object(const Vector& a, const bool& im = false){
+
+    Object(const Vector& a, const Properties& prop){
         albedo = a;
-        ismirror = im;
+        ismirror = prop.ismirror;
+        istrans = prop.istrans;
+        fresnel = prop.fresnel;
     }
 
     virtual bool intersect(const Ray& ray, Vector& point, Vector& normal) = 0;
@@ -53,7 +79,7 @@ public:
     Vector origin;
     double radius;
 
-	Sphere(const Vector& o, const double& r, const Vector& a, const bool& im = false) : Object(a, im){
+	Sphere(const Vector& o, const double& r, const Vector& a, const Properties& prop = Properties()) : Object(a, prop){
         origin = o;
         radius = r;
     }
@@ -185,7 +211,7 @@ public:
     BoundingBox box;
     BVHnode* root;
 
-    Mesh(const char* l, const Vector& a, const bool& im = false) : Object(a, im) {
+    Mesh(const char* l, const Vector& a, const Properties& prop = Properties()) : Object(a, prop) {
         tmesh.readOBJ(l);
         box.getBox(tmesh, 0, tmesh.indices.size());
         root = new BVHnode();
@@ -425,14 +451,56 @@ public :
             return Vector(100,100,100);
         }
 
+        double eps = pow(10, -3);
         BestO->intersect(ray, intersection, normal);
         intersection = intersection + pow(10, -4)*normal;
         Vector LP = light - intersection;
 
         if(BestO->ismirror && depth > 0){
             Vector reflection_direction = ray.direction - 2*dot(ray.direction, normal) * normal;
-            Ray reflection_ray(intersection, reflection_direction);
+            Ray reflection_ray(intersection + eps * reflection_direction, reflection_direction);
             Vector color = getColor(reflection_ray, depth-1, depth2);
+            return color;
+        }
+        else if(BestO->istrans && depth > 0){
+            double n1 = 1;
+            double n2 = 1.5;
+
+            // Snell
+            double iN = dot(ray.direction, normal);
+            if(iN > 0){
+                // Inside the sphre so swap the mediums / normal
+                std::swap(n1, n2);
+                normal = -1. * normal;
+                iN = dot(ray.direction, normal);
+            }
+            Vector trans_direction;
+
+            double p = 1-(n1/n2)*(n1/n2)*(1-iN*iN);
+            if(p < 0){
+                // Since negative we get full reflection like a mirror
+                trans_direction = ray.direction - 2*iN * normal;
+                trans_direction.normalize();
+                Ray trans_ray(intersection + eps * trans_direction, trans_direction);
+                Vector color = getColor(trans_ray, depth-1, depth2);
+                return color;
+            }
+            Vector totT = n1/n2 * (ray.direction - iN * normal);
+            Vector tonN =  - sqrt(p) * normal;
+            trans_direction = totT + tonN;
+
+            // Fresnel
+            if(BestO->fresnel){
+                double k0 = pow(n1-n2, 2)/pow(n1 + n2, 2);
+                double R = k0 + (1 - k0)*pow(1 - abs(iN), 5);
+                if(unif(gen) < R){
+                    trans_direction = ray.direction - 2*iN * normal;
+                }
+            }
+
+            trans_direction.normalize();
+            Ray trans_ray(intersection + eps * trans_direction, trans_direction);
+            Vector color = getColor(trans_ray, depth-1, depth2);
             return color;
         }
 
@@ -477,13 +545,14 @@ int main() {
     int H = 256;
 
     Vector camera(0, 0, 55);
-    int max_depth = 3;
-    int light_depth = 3;
-    int N = 10;
+    int max_depth = 5;
+    int light_depth = 5;
+    int N = 30;
 
     double fov = 60 * pi / 180;
     Vector albedo(1, 0, 0);
-    Sphere S(Vector(0, 0, 10), 10, albedo, true);
+    Properties prop(false, true, true);
+    Sphere S(Vector(0, 0, 10), 10, albedo, prop);
     Sphere S2(Vector(20,10,15), 10, Vector(0,0,1));
     Vector light(-10, 20, 40);
     double intensity = 5*pow(10,9);
@@ -494,16 +563,15 @@ int main() {
     Sphere front(Vector(0, 0, -1000), bigradius, Vector(0.4, 0.8, 0.7));
     Sphere ceil(Vector(0, 1000, 0), bigradius, Vector(0.2, 0.5, 0.9));
     Sphere floor(Vector(0, -1000, 0), 990, Vector(0.3, 0.4, 0.7));
-    Sphere back(Vector(0, 0, 1000), bigradius, Vector(0.9, 0.4, 0.3), true);
+    Sphere back(Vector(0, 0, 1000), bigradius, Vector(0.9, 0.4, 0.3));
     std::vector<Object*> room;
     Scene scene(light, intensity, room);
 
-    Mesh* cat_mesh = new Mesh("cat_model/cat.obj", Vector(0.8,0.8,0.8));
-    Vector resize(0, 15, 0);
-    cat_mesh->resize(resize, 0.4);
-    cat_mesh->construct(cat_mesh->root, 0, cat_mesh->tmesh.indices.size());
-
-    scene.add(cat_mesh);
+    // Mesh* cat_mesh = new Mesh("cat_model/cat.obj", Vector(0.8,0.8,0.8));
+    // Vector resize(0, 15, 0);
+    // cat_mesh->resize(resize, 0.4);
+    // cat_mesh->construct(cat_mesh->root, 0, cat_mesh->tmesh.indices.size());
+    //scene.add(cat_mesh);
     
     scene.add(&ceil);
     scene.add(&floor);
@@ -511,7 +579,7 @@ int main() {
     scene.add(&left);
     scene.add(&right);
     scene.add(&back);
-    //scene.add(&S);
+    scene.add(&S);
     //scene.add(S2);
 
 	std::vector<unsigned char> image(W * H * 3, 0);
@@ -540,9 +608,9 @@ int main() {
 
 		}
 	}
-	stbi_write_png("image4.png", W, H, 3, &image[0], 0);
+	stbi_write_png("image9.png", W, H, 3, &image[0], 0);
 
-    delete cat_mesh;
+    //delete cat_mesh;
 	return 0;
 }
 
