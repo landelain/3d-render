@@ -635,7 +635,3 @@ int main() {
 // texW = same
 // albedo = Vector( textures[indicies[i].group][V*texH + U + 0], textures[indicies[i].group][V*texH + U + 1], textures[indicies[i].group][V*texH + U + 2]
 // dont forget that Mesh returns this albedo so OBject should also and so should Sphere
-
-
-
-
