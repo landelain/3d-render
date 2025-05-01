@@ -239,7 +239,7 @@ public:
                 pivot+= 1;
             }
         }
- 
+
         if (pivot <= first or pivot >= last){
             return;
         }
@@ -586,8 +586,8 @@ int main() {
     scene.add(&right);
     scene.add(&back);
     scene.add(&S);
-    scene.add(&S2);
-    scene.add(&S3);
+    // scene.add(&S2);
+    // scene.add(&S3);
 
 	std::vector<unsigned char> image(W * H * 3, 0);
     #pragma omp parallel for collapse(2) schedule(guided)
