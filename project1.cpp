@@ -85,11 +85,11 @@ public:
     }
 
     bool intersect(const Ray& ray, Vector& point, Vector& normal) override {
-        double delta = (dot(ray.direction, ray.origin - origin))*(dot(ray.direction, ray.origin - origin)) - ( (ray.origin - origin).norm2() - sqr(radius));
+        double d = dot(ray.direction, ray.origin - origin);
+        double delta = d*d - ( (ray.origin - origin).norm2() - sqr(radius));
         if(delta < 0){ return false; }
-        double dotprod = dot(ray.direction, origin - ray.origin);
-        double t1 = dotprod + sqrt(delta);
-        double t2 = dotprod - sqrt(delta);
+        double t1 = -d + sqrt(delta);
+        double t2 = -d - sqrt(delta);
         if (t1 < 0){ return false;}
         double t;
         if( t2 > 0 ){
@@ -255,15 +255,14 @@ public:
 
     void resize(Vector& shift, double coef){
         std::vector<Vector>::iterator it = tmesh.vertices.begin();
-        while(it < tmesh.vertices.end()){
-
+        std::vector<Vector>::iterator end = tmesh.vertices.end();
+        while(it < end){
             (*it)[0] = ( (*it)[0] - shift[0]) * coef;
             (*it)[1] = ( (*it)[1] - shift[1]) * coef;
-            (*it)[2] = ( (*it)[2] - shift[2]) * coef;
-            ++it;
+            (*it)[2] = ((*it)[2] - shift[2]) * coef;
+            it++;
         }
         box.getBox(tmesh, 0, tmesh.indices.size());
-        //construct(root, 0, tmesh.indices.size());
     }
 
     bool MollerTrumbore(const Ray& ray, const Vector& A, const Vector& B, const Vector& C, double& t, double& alpha, double& beta, double& gamma){
@@ -331,7 +330,7 @@ public:
                             found = true;
                             bestt = t;
                             point = alpha * A + beta * B + gamma * C;
-                            normal = alpha*tmesh.normals[tmesh.indices[i].ni] + beta*tmesh.normals[tmesh.indices[i].nj] + gamma*tmesh.normals[tmesh.indices[i].nk];
+                            normal = 1./3.*tmesh.normals[tmesh.indices[i].ni] + 1./3.*tmesh.normals[tmesh.indices[i].nj] + 1./3.*tmesh.normals[tmesh.indices[i].nk];
                             normal.normalize();
                         }
                         
@@ -426,25 +425,26 @@ public :
         Objects.push_back(Ob);
     }
 
-    Vector getColor(const Ray& ray, int depth, int depth2) {
+    Vector getColor(const Ray& ray, int depth) {
 
         Vector intersection;
         Vector normal;   
 
         bool found = false;
         Object* BestO = Objects[0];
-        double bestdist = 100000;
+        double bestdist = 1e9;
+        Vector bestinter, bestnorm;
 
-        std::vector<Object*>::iterator it1 = Objects.begin();
-        while( it1 < Objects.end()){
-            if(((*it1)->intersect(ray, intersection, normal))){
+        for( auto O : Objects){
+            if((O->intersect(ray, intersection, normal))){
                     found = true;
-                if ((intersection - ray.origin).norm() < bestdist){
-                    BestO = *it1;
-                    bestdist = (intersection - ray.origin).norm();
+                if ((intersection - ray.origin).norm2() < bestdist){
+                    BestO = O;
+                    bestdist = (intersection - ray.origin).norm2();
+                    bestinter = intersection;
+                    bestnorm = normal;
                 }
             }
-            ++it1;
         }
 
         if ( ! found) {
@@ -452,14 +452,14 @@ public :
         }
 
         double eps = pow(10, -3);
-        BestO->intersect(ray, intersection, normal);
-        intersection = intersection + pow(10, -4)*normal;
+        intersection = bestinter;
+        normal = bestnorm;
         Vector LP = light - intersection;
 
         if(BestO->ismirror && depth > 0){
             Vector reflection_direction = ray.direction - 2*dot(ray.direction, normal) * normal;
             Ray reflection_ray(intersection + eps * reflection_direction, reflection_direction);
-            Vector color = getColor(reflection_ray, depth-1, depth2);
+            Vector color = getColor(reflection_ray, depth-1);
             return color;
         }
         else if(BestO->istrans && depth > 0){
@@ -482,7 +482,7 @@ public :
                 trans_direction = ray.direction - 2*iN * normal;
                 trans_direction.normalize();
                 Ray trans_ray(intersection + eps * trans_direction, trans_direction);
-                Vector color = getColor(trans_ray, depth-1, depth2);
+                Vector color = getColor(trans_ray, depth-1);
                 return color;
             }
             Vector totT = n1/n2 * (ray.direction - iN * normal);
@@ -500,37 +500,42 @@ public :
 
             trans_direction.normalize();
             Ray trans_ray(intersection + eps * trans_direction, trans_direction);
-            Vector color = getColor(trans_ray, depth-1, depth2);
+            Vector color = getColor(trans_ray, depth-1);
             return color;
         }
 
+        intersection = intersection + eps*normal;
         Ray shadow_ray(intersection, LP/LP.norm());
         Vector intersection2;
         Vector normal2;
         bool shadow = false;
-        std::vector<Object*>::iterator it2 = Objects.begin();
-        while(it2 < Objects.end()){
-            bool flag = (*it2)->intersect(shadow_ray, intersection2, normal2);
-            if(flag && (LP.norm() > (intersection2 - intersection).norm())){
-                shadow = true;
-                break;
+        double dotprod = dot(normal, LP/LP.norm()); 
+        if (dotprod < 0) {
+            shadow = true;
+        }
+        else{
+            for(auto O : Objects){
+                bool flag = O->intersect(shadow_ray, intersection2, normal2);
+                if(flag && (LP.norm2() > (intersection2 - intersection).norm2())){
+                    shadow = true;
+                    break;
+                }
             }
-            ++it2;
         }
 
         Vector color(0,0,0);
-        if (! shadow){
+        if (! shadow){ 
             double dotprod = dot(normal,LP/LP.norm());
             if (dotprod < 0){return Vector(0,0,0); }
             color =  intensity/(4*pi*LP.norm2()) * BestO->albedo/pi * dotprod;
         }
 
-        if(depth2 <= 0 ){return color;}
+        if(depth <= 0 ){return color;}
 
         Vector random;
         random_vector(normal, random);
         Ray rec_ray(intersection, random);
-        color =  color + BestO->albedo * getColor(rec_ray, depth, depth2-1);
+        color =  color + BestO->albedo * getColor(rec_ray, depth-1);
     
         return color;
     };
@@ -539,21 +544,22 @@ public :
 
 
 int main() {
-	//int W = 512;
-	//int H = 512;
-    int W = 256;
-    int H = 256;
+	int W = 512;
+	int H = 512;
+    // int W = 256;
+    // int H = 256;
 
     Vector camera(0, 0, 55);
-    int max_depth = 5;
-    int light_depth = 5;
-    int N = 30;
+    int depth = 5;
+    int N = 64;
 
     double fov = 60 * pi / 180;
     Vector albedo(1, 0, 0);
-    Properties prop(false, true, true);
-    Sphere S(Vector(0, 0, 10), 10, albedo, prop);
-    Sphere S2(Vector(20,10,15), 10, Vector(0,0,1));
+    Properties prop(true, false, false);
+    Properties prop2(false, true, true);
+    Sphere S(Vector(0, 0, 10), 7, albedo, prop);
+    Sphere S2(Vector(-15,0,10), 7, albedo);
+    Sphere S3(Vector(15,0,10), 7, albedo, prop2);
     Vector light(-10, 20, 40);
     double intensity = 5*pow(10,9);
 
@@ -567,11 +573,11 @@ int main() {
     std::vector<Object*> room;
     Scene scene(light, intensity, room);
 
-    // Mesh* cat_mesh = new Mesh("cat_model/cat.obj", Vector(0.8,0.8,0.8));
+    // Mesh cat_mesh = Mesh("cat_model/cat.obj", Vector(0.8,0.8,0.8));
     // Vector resize(0, 15, 0);
-    // cat_mesh->resize(resize, 0.4);
-    // cat_mesh->construct(cat_mesh->root, 0, cat_mesh->tmesh.indices.size());
-    //scene.add(cat_mesh);
+    // cat_mesh.resize(resize, 0.4);
+    // cat_mesh.construct(cat_mesh.root, 0, cat_mesh.tmesh.indices.size());
+    // scene.add(&cat_mesh);
     
     scene.add(&ceil);
     scene.add(&floor);
@@ -580,7 +586,8 @@ int main() {
     scene.add(&right);
     scene.add(&back);
     scene.add(&S);
-    //scene.add(S2);
+    scene.add(&S2);
+    scene.add(&S3);
 
 	std::vector<unsigned char> image(W * H * 3, 0);
     #pragma omp parallel for collapse(2) schedule(guided)
@@ -598,7 +605,7 @@ int main() {
                 Vector ray_direction(j - W/2 +0.5 + x2, H/2 - i - 0.5 + y2, z);
                 ray_direction.normalize();
                 Ray ray(camera, ray_direction);
-                color = color + scene.getColor(ray, max_depth, light_depth);
+                color = color + scene.getColor(ray, depth);
             }
             color = color / N;
             
@@ -608,7 +615,7 @@ int main() {
 
 		}
 	}
-	stbi_write_png("image9.png", W, H, 3, &image[0], 0);
+	stbi_write_png("image*.png", W, H, 3, &image[0], 0);
 
     //delete cat_mesh;
 	return 0;
