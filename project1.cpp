@@ -240,6 +240,8 @@ public:
             }
         }
 
+        //std::cout<< 1.*(pivot-first)/(1*(last-first)) << std::endl;
+
         if (pivot <= first or pivot >= last){
             return;
         }
@@ -319,7 +321,7 @@ public:
                     stack.push(c->right);
                 }
             } else {
-                for (int i = 0; i < tmesh.indices.size(); i++) {
+                for (int i = c->first; i < c->last; i++) {
                     const Vector& A = tmesh.vertices[tmesh.indices[i].vtxi];
                     const Vector& B = tmesh.vertices[tmesh.indices[i].vtxj];
                     const Vector& C = tmesh.vertices[tmesh.indices[i].vtxk];
@@ -330,7 +332,7 @@ public:
                             found = true;
                             bestt = t;
                             point = alpha * A + beta * B + gamma * C;
-                            normal = 1./3.*tmesh.normals[tmesh.indices[i].ni] + 1./3.*tmesh.normals[tmesh.indices[i].nj] + 1./3.*tmesh.normals[tmesh.indices[i].nk];
+                            normal = alpha*tmesh.normals[tmesh.indices[i].ni] + beta*tmesh.normals[tmesh.indices[i].nj] + gamma*tmesh.normals[tmesh.indices[i].nk];
                             normal.normalize();
                         }
                         
@@ -338,24 +340,6 @@ public:
                 }
             }  
         }
-
-        // for (int i = root->first; i < root->last; i++) {
-        //     const Vector& A = tmesh.vertices[tmesh.indices[i].vtxi];
-        //     const Vector& B = tmesh.vertices[tmesh.indices[i].vtxj];
-        //     const Vector& C = tmesh.vertices[tmesh.indices[i].vtxk];
-        //     double alpha, beta, gamma, t;
-
-        //     if (MollerTrumbore(ray, A, B, C, t, alpha, beta, gamma)){
-        //         if(t < bestt){
-        //             found = true;
-        //             bestt = t;
-        //             point = alpha * A + beta * B + gamma * C;
-        //             normal = alpha*tmesh.normals[tmesh.indices[i].ni] + beta*tmesh.normals[tmesh.indices[i].nj] + gamma*tmesh.normals[tmesh.indices[i].nk];
-        //             normal.normalize();
-        //         }
-                
-        //     } 
-        // }
 
         return found;
     }
@@ -573,11 +557,12 @@ int main() {
     std::vector<Object*> room;
     Scene scene(light, intensity, room);
 
-    // Mesh cat_mesh = Mesh("cat_model/cat.obj", Vector(0.8,0.8,0.8));
-    // Vector resize(0, 15, 0);
-    // cat_mesh.resize(resize, 0.4);
-    // cat_mesh.construct(cat_mesh.root, 0, cat_mesh.tmesh.indices.size());
-    // scene.add(&cat_mesh);
+    Properties propcat(false, false, false);
+    Mesh cat_mesh = Mesh("cat_model/cat.obj", Vector(0.8,0.8,0.8), propcat);
+    Vector resize(0, 15, 0);
+    cat_mesh.resize(resize, 0.4);
+    cat_mesh.construct(cat_mesh.root, 0, cat_mesh.tmesh.indices.size());
+    scene.add(&cat_mesh);
     
     scene.add(&ceil);
     scene.add(&floor);
@@ -585,7 +570,7 @@ int main() {
     scene.add(&left);
     scene.add(&right);
     scene.add(&back);
-    scene.add(&S);
+    //scene.add(&S);
     // scene.add(&S2);
     // scene.add(&S3);
 
@@ -615,7 +600,7 @@ int main() {
 
 		}
 	}
-	stbi_write_png("image*.png", W, H, 3, &image[0], 0);
+	stbi_write_png("image.png", W, H, 3, &image[0], 0);
 
     //delete cat_mesh;
 	return 0;
