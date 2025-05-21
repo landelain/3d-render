@@ -1,6 +1,13 @@
 #include "save_svg.cpp"
 #include <random>
 #include "lbfgs.c"
+#define STB_IMAGE_WRITE_IMPLEMENTATION
+#include "stb_image_write.h"
+
+#include <sstream>
+
+#define PI 3.14159
+#define VOL_FLUID 0.6
 
 
 std::random_device rd;
@@ -13,16 +20,53 @@ public :
     std::vector<Polygon> diagram;
     std::vector<Vector> points;
     std::vector<double> weights;
+    std::vector<Vector> unit_disk;
+    int N_disk;
 
     Voronoi_Diagram(){};
 
-    Voronoi_Diagram(std::vector<Vector> points){
+    Voronoi_Diagram(std::vector<Vector> points, int N_disk = 10){
         this->points = points;
         weights = std::vector<double>(points.size(), 0.1);
-        // for(int i = 0; i < points.size(); i++){
-        //     weights[i] = unif(gen)*0.01;
-        // }
+        
+        this->N_disk = N_disk;
+        unit_disk.resize(N_disk);
+        for(int i = 0; i < N_disk; i++){
+            double theta = i*(2.*PI / (double)N_disk);
+            unit_disk[i] = Vector(cos(-theta), sin(-theta), 0);
+        }
+
     }
+
+    Polygon Suth_Hod_clip(Vector& u, Vector& v, Polygon& Poly){
+        Polygon result;
+        Vector A,B;
+        int n = Poly.vertices.size();
+
+        for(int i = 0; i < n; i++){
+            A = Poly.vertices[(i==0)? n-1: i-1];
+            B = Poly.vertices[i];
+            Vector N(v[1]-u[1], u[0] - v[0], 0);
+            Vector P = A + dot((u-A), N)/dot((B-A), N) * (B-A);
+
+            // B inside
+            if(dot((u-B), N) >= 0){
+                // A outside
+                if(dot((u-A), N) < 0){
+                    result.vertices.push_back(P);
+                }
+                result.vertices.push_back(B);
+            }
+            // A inside
+            else if (dot((u-A), N) >= 0){
+                result.vertices.push_back(P);
+            }
+        }
+
+        return result;
+    }
+
+    
 
     Polygon Voronoi_clip(Vector& Po, Vector& Pi, Polygon& Poly){
         Polygon result;
@@ -89,34 +133,13 @@ public :
         std::vector<Vector> Centroids = {};
 
         for(int i = 0 ; i < diagram.size(); i++){
-            double sum = 0;
-            int n = diagram[i].vertices.size();
-
-            for(int j = 0 ; j < n; j++){
-                sum += (diagram[i].vertices[j][0] * diagram[i].vertices[(j == n-1) ? 0 : j+1][1]) - (diagram[i].vertices[j][1] * diagram[i].vertices[(j == n-1) ? 0 : j+1 ][0]);
-            }
-            double A = 1./2. * sum;
-            sum = 0;
-
-            for(int j = 0 ; j < n; j++){
-                sum += (diagram[i].vertices[j][0] + diagram[i].vertices[(j == n-1) ? 0 : j+1][0]) * (diagram[i].vertices[j][0] * diagram[i].vertices[(j == n-1) ? 0 : j+1][1] - diagram[i].vertices[j][1] * diagram[i].vertices[(j == n-1) ? 0 : j+1 ][0]);
-            }
-            double Cx = 1./(6. * A) * sum;
-            sum = 0;
-
-            for(int j = 0 ; j < n; j++){
-                sum += (diagram[i].vertices[j][1] + diagram[i].vertices[(j == n-1) ? 0 : j+1][1]) * ( diagram[i].vertices[j][0] * diagram[i].vertices[(j == n-1) ? 0 : j+1][1] - diagram[i].vertices[j][1] * diagram[i].vertices[(j == n-1) ? 0 : j+1 ][0]);
-            }
-            double Cy = 1./(6. * A) * sum;
-
-            Centroids.push_back(Vector(Cx, Cy, 0.));
+            Vector centroid = diagram[i].centroid();
+            Centroids.push_back(centroid);
         }  
-
         this->points = Centroids;
     }
 
-
-    void compute(){
+    void compute_power(){
         diagram = {};
         Polygon square;
         double size = 1;
@@ -131,6 +154,22 @@ public :
                 if(i == j){continue;}
                 //V = Voronoi_clip(points[i], points[j], V);
                 V = Laguerre_clip(points[i], points[j], V, weights[i], weights[j]);
+            }
+
+            diagram.push_back(V);
+        }
+    }
+
+    void compute_suth(){
+        diagram = {};
+        Polygon V;
+        
+        for(int i = 0; i < points.size(); i++){
+            for(int j = 0; j < N_disk; j++){
+                double radius = sqrt(weights[i] - weights[weights.size()-1]);
+                Vector u = unit_disk[j]*radius + points[i];
+                Vector v = unit_disk[(j+1) % N_disk] * radius + points[i];
+                V = Suth_Hod_clip(u, v, V);
             }
 
             diagram.push_back(V);
@@ -173,7 +212,7 @@ public:
     void optimize(){
         int i, ret = 0;
         lbfgsfloatval_t fx = 0.0;
-        int N = diagram.points.size();
+        int N = diagram.weights.size();
         std::vector<lbfgsfloatval_t> weights(N, 0.0);
 
         lbfgs_parameter_t param;
@@ -185,8 +224,9 @@ public:
         ret = lbfgs(N, &weights[0], &fx, evaluate, progress, (void*) this, &param);
 
         diagram.weights = weights;
+        //memcpy(&diagram.weights[0]);
 
-        diagram.compute();
+        diagram.compute_power();
         
     }
 
@@ -203,16 +243,24 @@ static lbfgsfloatval_t evaluate(
     OptimalTransport* ot = static_cast<OptimalTransport*>(instance);
     lbfgsfloatval_t fx = 0.0;
 
-    ot->diagram.weights.assign(x, x + n);
-    ot->diagram.compute();
-    
-    for(int i=0; i < n; i++){
-        double current_area = ot->diagram.diagram[i].area();
-        double area = 1./n;
+    ot->diagram.weights.assign(x, x + n); //memcpy
+    //memcpy(&ot->diagram.weights[0], x, n*sizeof(x[0]));
+    ot->diagram.compute_power();
+    double sum_fluid = 0;
 
-        g[i] = -(area - current_area);
+    for(int i=0; i < n-1; i++){
+        double current_area = ot->diagram.diagram[i].area();
+        sum_fluid += current_area;
+        double area = VOL_FLUID/(n-1);
+
+        g[i] = -( VOL_FLUID - current_area);
         fx += ot->diagram.diagram[i].integral_sq_dist(ot->diagram.points[i]) - x[i] * (current_area - area) ;
     }
+
+    double estimated_air_vol = 1 - sum_fluid;
+    double desired_air_vol = (1. - VOL_FLUID);
+    g[n-1] = -(desired_air_vol - estimated_air_vol);
+    fx+= x[n-1] * (desired_air_vol - estimated_air_vol);
 
     return -fx;
 
@@ -239,27 +287,162 @@ static int progress(
 
 }
 
-int main(){
 
-    int n_points = 100;
-    
-    std::vector<Vector> points;
-    for(int i = 0; i < n_points ; i++){
-        double x = unif(gen);
-        double y = unif(gen);
-        Vector point(x, y, 0);
-        points.push_back(point);
+int sgn(double x){
+    if(x>=0) return 1;
+    else return -1;
+}
+
+void save_frame(const std::vector<Polygon> &cells, std::string filename, int frameid = 0) {
+    int W = 1000, H = 1000;
+    std::vector<unsigned char> image(W*H * 3, 255);
+    #pragma omp parallel for schedule(dynamic)
+    for (int i = 0; i < cells.size(); i++) {
+
+        double bminx = 1E9, bminy = 1E9, bmaxx = -1E9, bmaxy = -1E9;
+        for (int j = 0; j < cells[i].vertices.size(); j++) {
+            bminx = std::min(bminx, cells[i].vertices[j][0]);
+            bminy = std::min(bminy, cells[i].vertices[j][1]);
+            bmaxx = std::max(bmaxx, cells[i].vertices[j][0]);
+            bmaxy = std::max(bmaxy, cells[i].vertices[j][1]);
+        }
+        bminx = std::min(W-1., std::max(0., W * bminx));
+        bminy = std::min(H-1., std::max(0., H * bminy));
+        bmaxx = std::max(W-1., std::max(0., W * bmaxx));
+        bmaxy = std::max(H-1., std::max(0., H * bmaxy));
+
+        for (int y = bminy; y < bmaxy; y++) {
+            for (int x = bminx; x < bmaxx; x++) {
+                int prevSign = 0;
+                bool isInside = true;
+                double mindistEdge = 1E9;
+                for (int j = 0; j < cells[i].vertices.size(); j++) {
+                    double x0 = cells[i].vertices[j][0] * W;
+                    double y0 = cells[i].vertices[j][1] * H;
+                    double x1 = cells[i].vertices[(j + 1) % cells[i].vertices.size()][0] * W;
+                    double y1 = cells[i].vertices[(j + 1) % cells[i].vertices.size()][1] * H;
+                    double det = (x - x0)*(y1-y0) - (y - y0)*(x1-x0);
+                    int sign = sgn(det);
+                    if (prevSign == 0) prevSign = sign; else
+                        if (sign == 0) sign = prevSign; else
+                        if (sign != prevSign) {
+                            isInside = false;
+                            break;
+                        }
+                    prevSign = sign;
+                    double edgeLen = sqrt((x1 - x0)*(x1 - x0) + (y1 - y0)*(y1 - y0));
+                    double distEdge = std::abs(det)/ edgeLen;
+                    double dotp = (x - x0)*(x1 - x0) + (y - y0)*(y1 - y0);
+                    if (dotp<0 || dotp>edgeLen*edgeLen) distEdge = 1E9;
+                    mindistEdge = std::min(mindistEdge, distEdge);
+                }
+                if (isInside) {
+                    //if (i < N) {   // the N first particles may represent fluid, displayed in blue
+                    //	image[((H - y - 1)*W + x) * 3] = 0;
+                    //	image[((H - y - 1)*W + x) * 3 + 1] = 0;
+                    //	image[((H - y - 1)*W + x) * 3 + 2] = 255;
+                    //}
+                    if (mindistEdge <= 2) {
+                        image[((H - y - 1)*W + x) * 3] = 0;
+                        image[((H - y - 1)*W + x) * 3 + 1] = 0;
+                        image[((H - y - 1)*W + x) * 3 + 2] = 0;
+                    }
+
+                }
+                
+            }
+        }
+    }
+    std::ostringstream os;
+    os << filename << frameid << ".png";
+    stbi_write_png(os.str().c_str(), W, H, 3, &image[0], 0);
+};
+
+class Fluid {
+public:
+
+    Fluid(int N, OptimalTransport ot){
+        this->N = N;
+
+        particles.resize(N);
+        velocities.resize(N, Vector(0, 0, 0));
+        for(int i = 0; i < N; i++){
+            particles[i] = Vector(unif(gen), unif(gen), 0);
+        }
+        this->ot = ot;
+        ot.diagram.points = particles;
+        ot.diagram.weights.resize(N+1);
+        std::fill(ot.diagram.weights.begin(), ot.diagram.weights.end(), 1.);
+
+    }   
+
+    void time_step(double dt){
+
+        double eps = 0.004;
+        double eps2 = eps*eps;
+        Vector g(0, -9.81, 0);
+        double mass = 200;
+
+        ot.diagram.compute_power();
+        ot.optimize();
+
+        for(int i = 0; i < particles.size(); i++){
+
+            Vector center_cell = ot.diagram.diagram[i].centroid(); // define centroid
+            Vector spring_force = (center_cell - particles[i])/(eps2);
+            Vector all_forces = g + spring_force;
+
+            velocities[i] = velocities[i] +  dt/mass * all_forces;
+            particles[i] = particles[i] + dt * velocities[i];
+        }
     }
 
+    void simulation(){
+        double dt = 0.002;
+        for(int i = 0; i < 100 ; i ++){
+            time_step(dt);
+            save_frame(ot.diagram.diagram, "animation", i);
+        }
+    }
+
+    OptimalTransport ot;
+    std::vector<Vector> particles;
+    std::vector<Vector> velocities;
+    int N;
+    double fluid_volume;
+
+};
+
+int main(){
+
+    std::vector<Vector> points;
     Voronoi_Diagram diagram(points);
     OptimalTransport ot(diagram);
-    ot.diagram.compute();
-    ot.optimize();
-    //std::cout << "hey" << std::endl;
-    //ot.diagram.compute();
-    //std::cout << "hey" << std::endl;
+    Fluid fluid(1000, ot);
 
-    save_svg(ot.diagram.diagram, "firstp.svg", "lightblue");
+    std::cout << "hey" << std::endl;
+    
+    fluid.simulation();
+    
+    // int n_points = 100;
+    
+    // std::vector<Vector> points;
+    // for(int i = 0; i < n_points ; i++){
+    //     double x = unif(gen);
+    //     double y = unif(gen);
+    //     Vector point(x, y, 0);
+    //     points.push_back(point);
+    // }
+
+    // Voronoi_Diagram diagram(points);
+    // OptimalTransport ot(diagram);
+    // ot.diagram.compute_power();
+    // ot.optimize();
+    // //std::cout << "hey" << std::endl;
+    // //ot.diagram.compute();
+    // //std::cout << "hey" << std::endl;
+
+    // save_svg(ot.diagram.diagram, "firstp.svg", "lightblue");
     //std::cout << "hey" << std::endl;
 
     // for(int i = 0; i< n_points ; i++){
@@ -270,12 +453,12 @@ int main(){
     //     std::cout << diagram.points[i][0] << ", " << diagram.points[i][0] << std::endl;
     // }
 
-    for(int i = 0; i < 10; i++){
-        ot.diagram.LLoyd();
-        //std::cout << "hey" << std::endl;
-        ot.diagram.compute();
-        //std::cout << "hey" << std::endl;
-    }
+    // for(int i = 0; i < 10; i++){
+    //     ot.diagram.LLoyd();
+    //     //std::cout << "hey" << std::endl;
+    //     ot.diagram.compute_power();
+    //     //std::cout << "hey" << std::endl;
+    // }
     
     
     // std::cout << diagram.diagram.size() << std::endl;

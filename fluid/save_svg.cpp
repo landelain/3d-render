@@ -99,6 +99,26 @@ public:
         }
         return sum;
     }
+
+    Vector centroid(){
+        int n = vertices.size();
+        if(n < 3) return Vector(0, 0, 0);
+        double sum = 0;
+        double A = area();
+
+        for(int j = 0 ; j < n; j++){
+            sum += (vertices[j][0] + vertices[(j == n-1) ? 0 : j+1][0]) * (vertices[j][0] * vertices[(j == n-1) ? 0 : j+1][1] - vertices[j][1] * vertices[(j == n-1) ? 0 : j+1 ][0]);
+        }
+        double Cx = 1./(6. * A) * sum;
+        sum = 0;
+
+        for(int j = 0 ; j < n; j++){
+            sum += (vertices[j][1] + vertices[(j == n-1) ? 0 : j+1][1]) * ( vertices[j][0] * vertices[(j == n-1) ? 0 : j+1][1] - vertices[j][1] * vertices[(j == n-1) ? 0 : j+1 ][0]);
+        }
+        double Cy = 1./(6. * A) * sum;
+
+        return Vector(Cx, Cy, 0.);
+    }
 };  
  
 // saves a static svg file. The polygon vertices are supposed to be in the range [0..1], and a canvas of size 1000x1000 is created
