@@ -64,6 +64,41 @@ public:
     Polygon(std::vector<Vector> vertices){
         this->vertices = vertices;
     }
+
+    double area(){
+        double sum = 0;
+        int n = vertices.size();
+        if(n < 3){
+            return 0;
+        }
+        for(int i = 0; i < n; i++){
+            sum += (vertices[i][0] * vertices[(i == n-1) ? 0 : i+1][1]) - (vertices[(i == n-1) ? 0 : i+1][0] * vertices[i][1]);
+        }
+        return std::abs(sum) / 2. ;
+    }
+
+    double integral_sq_dist(Vector& P){
+        int n = vertices.size();
+        if(n < 3){
+            return 0;
+        }
+        double sum = 0;
+        for(int i = 1; i< n-1; i++){
+            Vector triangle[3] =  {vertices[0], vertices[i], vertices[i+1]};
+
+            double integral = 0;
+            for(int j = 0; j < 3; j++){
+                for(int k = j; k < 3; k++){
+                    integral += dot((triangle[j] - P), (triangle[k] - P));
+                }
+            }
+            Vector edge1 = triangle[1] - triangle[0];
+            Vector edge2 = triangle[2] - triangle[0];
+            double area = 0.5 * std::abs(edge1[1]*edge2[0] - edge1[0]*edge2[1]);
+            sum += integral * area / 6.;
+        }
+        return sum;
+    }
 };  
  
 // saves a static svg file. The polygon vertices are supposed to be in the range [0..1], and a canvas of size 1000x1000 is created
