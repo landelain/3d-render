@@ -1,0 +1,8 @@
+
+
+find "$PWD" -maxdepth 1 -name "animation*.png" | sort -V | awk '{print "file \x27" $0 "\x27"}' > filelist.txt
+
+
+ffmpeg -f concat -safe 0 -i filelist.txt -framerate 0.25 -c:v libx264 -pix_fmt yuv420p animation.mp4
+
+mv animation*.png anim

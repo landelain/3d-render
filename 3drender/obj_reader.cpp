@@ -3,6 +3,10 @@
 #include <stdio.h>
 #include <algorithm>
 #include <vector>
+#include <map>
+#include <set>
+
+#define PI  3.14159
 
 // found on the moodle page from pastebin.com
 
@@ -244,6 +248,139 @@ public:
 		fclose(f);
 
 	}
+
+	void write_obj(const char* filename){
+		FILE* f = fopen(filename, "w");
+		for(int i = 0; i < vertices.size(); i ++){
+			fprintf(f, "v %3.5f %3.5f %3.5f\n", vertices[i][0], vertices[i][1], vertices[i][2]);
+		}
+		for(int i = 0; i < indices.size(); i ++){
+			fprintf(f, "v %u %u %u\n", indices[i].vtxi +1 , indices[i].vtxj + 1, indices[i].vtxk + 1);
+		}
+		fclose(f);
+	}
+
+	void Tutte(){
+
+		std::vector<std::set<int>> vertex_to_neigh_set(vertices.size());
+		for(int i = 0; i < indices.size(); i++){
+			vertex_to_neigh_set[indices[i].vtxi].insert(indices[i].vtxj);
+			vertex_to_neigh_set[indices[i].vtxi].insert(indices[i].vtxk);
+			vertex_to_neigh_set[indices[i].vtxj].insert(indices[i].vtxi);
+			vertex_to_neigh_set[indices[i].vtxj].insert(indices[i].vtxk);
+			vertex_to_neigh_set[indices[i].vtxk].insert(indices[i].vtxi);
+			vertex_to_neigh_set[indices[i].vtxk].insert(indices[i].vtxj);
+		}
+
+		std::vector< std::vector<int>> vertex_to_neigh(vertices.size());
+		for(int i = 0; i < vertices.size(); i++){
+			for(auto it = vertex_to_neigh_set[i].begin(); it != vertex_to_neigh_set[i].end(); it++){
+				vertex_to_neigh[i].push_back(*it);
+			}
+		}
+
+		std::vector<bool> boundary_vtx(vertices.size(), false);
+
+        std::map< std::pair<int, int>, std::vector<int> > edge_to_triangle;
+        for(int i = 0; i < indices.size(); i++){
+
+            int minIJ = std::min(indices[i].vtxi, indices[i].vtxj);
+            int maxIJ = std::max(indices[i].vtxi, indices[i].vtxj);
+            std::pair<int, int> edge1(minIJ, maxIJ);
+            edge_to_triangle[edge1].push_back(i);
+
+            int minIK = std::min(indices[i].vtxi, indices[i].vtxk);
+            int maxIK = std::max(indices[i].vtxi, indices[i].vtxk);
+            std::pair<int, int> edge2(minIK, maxIK);
+            edge_to_triangle[edge2].push_back(i);
+
+            int minJK = std::min(indices[i].vtxj, indices[i].vtxk);
+            int maxJK = std::max(indices[i].vtxj, indices[i].vtxk);
+            std::pair<int, int> edge3(minJK, maxJK);
+            edge_to_triangle[edge3].push_back(i);
+        }	
+
+        std::vector< std::pair<int, int> > edges_on_the_boundary;
+        for (auto it = edge_to_triangle.begin(); it != edge_to_triangle.end(); it++){
+
+            if(it->second.size() == 1){
+                edges_on_the_boundary.push_back(it->first);
+				boundary_vtx[it->first.first] = true;
+				boundary_vtx[it->first.second] = true;
+            }
+        }
+
+        std::vector<int> boundary_chain;
+        int starting_vtx = edges_on_the_boundary[0].first;
+        boundary_chain.push_back(starting_vtx);
+        int current_vtx = edges_on_the_boundary[0].second;
+
+        int current_edge = 0;
+        while(current_vtx != starting_vtx){
+            boundary_chain.push_back(current_vtx);
+            for (int i = 0; i< edges_on_the_boundary.size(); i++){
+                if(i != current_edge && edges_on_the_boundary[i].first == current_vtx){
+                    current_vtx = edges_on_the_boundary[i].second;
+					current_edge = i;
+                    break;
+                }
+                else {
+                    if(i != current_edge && edges_on_the_boundary[i].second == current_vtx){
+                        current_vtx = edges_on_the_boundary[i].first;
+						current_edge = i;
+                        break;
+                    }
+                }
+            }
+            
+        }
+
+
+        TriangleMesh param;
+        param.indices = indices;
+		param.vertices = vertices;
+        // param.vertices = std::vector<Vector>(vertices.size());
+		// for(int i = 0; i < vertices.size(); i ++){
+		// 	 param.vertices[i] = Vector(rand()* , rand(), 0);
+		// }
+
+			
+        for (int i = 0; i< edges_on_the_boundary.size(); i++){
+            double theta = i * 2. * PI /((double)boundary_chain.size());
+            double x = cos(theta);
+            double y = sin(theta);
+            param.vertices[boundary_chain[i]] = Vector(x, y, 0.);
+        }
+
+		std::cout << "hey" << std::endl;
+
+        for(int iter = 0;  iter < 1000; iter ++){
+
+			std::vector<Vector> new_vertices(vertices.size());
+
+			for(int i = 0; i < vertices.size(); i++){
+				if( ! boundary_vtx[i]){
+
+					Vector avg(0,0,0);
+					int num_neigh = vertex_to_neigh[i].size();
+					for (int j = 0; j < num_neigh; j++){
+						avg = avg + param.vertices[vertex_to_neigh[i][j]];
+					}
+					avg = avg / num_neigh;
+					new_vertices[i] = avg;
+				}
+				else {
+					new_vertices[i] = param.vertices[i];
+				}
+
+				
+			}
+
+			param.vertices = new_vertices;
+        }	
+
+		param.write_obj("tutte_result.obj");
+    }
 
 	std::vector<TriangleIndices> indices;
 	std::vector<Vector> vertices;

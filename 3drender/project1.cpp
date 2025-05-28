@@ -13,6 +13,7 @@
 #include <list>
 #include <random>
 
+
 #define pi  3.14159
 
 double sqr(double a ){ return a*a;};
@@ -347,6 +348,7 @@ public:
 };
 
 
+
 void get_tangent(const Vector& normal, Vector& tangent){
     double x = normal.data[0];
     double y = normal.data[1];
@@ -526,104 +528,113 @@ public :
 
 };
 
+int main(){
 
-int main() {
-	int W = 512;
-	int H = 512;
-    // int W = 256;
-    // int H = 256;
+    TriangleMesh mask;
+    mask.readOBJ("goethe.obj");
+    mask.Tutte();
 
-    Vector camera(0, 0, 55);
-    int depth = 5;
-    int N = 64;
-
-    double fov = 60 * pi / 180;
-    Vector albedo(1, 0, 0);
-    Properties prop(true, false, false);
-    Properties prop2(false, true, true);
-    Sphere S(Vector(0, 0, 10), 7, albedo, prop);
-    Sphere S2(Vector(-15,0,10), 7, albedo);
-    Sphere S3(Vector(15,0,10), 7, albedo, prop2);
-    Vector light(-10, 20, 40);
-    double intensity = 5*pow(10,9);
-
-    double bigradius = 940;
-    Sphere right(Vector(1000, 0, 0), bigradius, Vector(0.6, 0.5, 0.1));
-    Sphere left(Vector(-1000, 0, 0), bigradius, Vector(0.9, 0.2, 0.9));
-    Sphere front(Vector(0, 0, -1000), bigradius, Vector(0.4, 0.8, 0.7));
-    Sphere ceil(Vector(0, 1000, 0), bigradius, Vector(0.2, 0.5, 0.9));
-    Sphere floor(Vector(0, -1000, 0), 990, Vector(0.3, 0.4, 0.7));
-    Sphere back(Vector(0, 0, 1000), bigradius, Vector(0.9, 0.4, 0.3));
-    std::vector<Object*> room;
-    Scene scene(light, intensity, room);
-
-    Properties propcat(false, false, false);
-    Mesh cat_mesh = Mesh("cat_model/cat.obj", Vector(0.8,0.8,0.8), propcat);
-    Vector resize(0, 15, 0);
-    cat_mesh.resize(resize, 0.4);
-    cat_mesh.construct(cat_mesh.root, 0, cat_mesh.tmesh.indices.size());
-    scene.add(&cat_mesh);
-    
-    scene.add(&ceil);
-    scene.add(&floor);
-    scene.add(&front);
-    scene.add(&left);
-    scene.add(&right);
-    scene.add(&back);
-    //scene.add(&S);
-    // scene.add(&S2);
-    // scene.add(&S3);
-
-	std::vector<unsigned char> image(W * H * 3, 0);
-    #pragma omp parallel for collapse(2) schedule(guided)
-	for (int i = 0; i < H; i++) {
-		for (int j = 0; j < W; j++) {
-
-            Vector color(0,0,0);
-            double z = -W/(2.*tan(fov/2));
-            for(int n = 0; n < N; ++n){
-                double r1 = unif(gen);
-                double r2 = unif(gen);
-                double x2 = sqrt(-2*log(r1)) * cos(2*pi*r1) * 0.25;
-                double y2 = sqrt(-2*log(r1)) * sin(2*pi*r1) * 0.25;
-
-                Vector ray_direction(j - W/2 +0.5 + x2, H/2 - i - 0.5 + y2, z);
-                ray_direction.normalize();
-                Ray ray(camera, ray_direction);
-                color = color + scene.getColor(ray, depth);
-            }
-            color = color / N;
-            
-            image[(i * W + j) * 3 + 0] = std::max(0., std::min(255., std::pow(color.data[0], 1./2.2)));
-            image[(i * W + j) * 3 + 1] = std::max(0., std::min(255., std::pow(color.data[1], 1./2.2)));
-            image[(i * W + j) * 3 + 2] = std::max(0., std::min(255., std::pow(color.data[2], 1./2.2)));
-
-		}
-	}
-	stbi_write_png("image.png", W, H, 3, &image[0], 0);
-
-    //delete cat_mesh;
-	return 0;
+    return 0;
 }
 
-// std vector std vector double textures
-// std vector int texture W
-//  textureH
-// //load texture (char* file)
-// int W? H, C
-// unsigner char * texture = stbi_load(file, &W, &H, &C, 3)
-// textureW.pushback(W);
-// textureH.pushback
-// std vector double current_tex(W*H*3)
-// for i < W*H*3
-// curretn_text[i] = std::power(tex[i] /  255. , 2.2)
-// textures.push_back(current_text)
-// mesh.load_texture(filename)
-// return current albdedo at intersetc and not just albedo of the cat itself
-// vector UV = interpolation of the UV coordiantes (much like normal)
-// U = std::min(UV[0]*texturesW[indices[i].group] -1. , UV[0]*texturesW[indices[i].group]); same min for the height after and use max than 0
-// V = (1-UV[1])*texturesH[indices[i].group]; maybe 1- maybe not
-// texH = texturesH[indices[i].group]
-// texW = same
-// albedo = Vector( textures[indicies[i].group][V*texH + U + 0], textures[indicies[i].group][V*texH + U + 1], textures[indicies[i].group][V*texH + U + 2]
-// dont forget that Mesh returns this albedo so OBject should also and so should Sphere
+
+// int main() {
+// 	int W = 512;
+// 	int H = 512;
+//     // int W = 256;
+//     // int H = 256;
+
+//     Vector camera(0, 0, 55);
+//     int depth = 5;
+//     int N = 64;
+
+//     double fov = 60 * pi / 180;
+//     Vector albedo(1, 0, 0);
+//     Properties prop(true, false, false);
+//     Properties prop2(false, true, true);
+//     Sphere S(Vector(0, 0, 10), 7, albedo, prop);
+//     Sphere S2(Vector(-15,0,10), 7, albedo);
+//     Sphere S3(Vector(15,0,10), 7, albedo, prop2);
+//     Vector light(-10, 20, 40);
+//     double intensity = 5*pow(10,9);
+
+//     double bigradius = 940;
+//     Sphere right(Vector(1000, 0, 0), bigradius, Vector(0.6, 0.5, 0.1));
+//     Sphere left(Vector(-1000, 0, 0), bigradius, Vector(0.9, 0.2, 0.9));
+//     Sphere front(Vector(0, 0, -1000), bigradius, Vector(0.4, 0.8, 0.7));
+//     Sphere ceil(Vector(0, 1000, 0), bigradius, Vector(0.2, 0.5, 0.9));
+//     Sphere floor(Vector(0, -1000, 0), 990, Vector(0.3, 0.4, 0.7));
+//     Sphere back(Vector(0, 0, 1000), bigradius, Vector(0.9, 0.4, 0.3));
+//     std::vector<Object*> room;
+//     Scene scene(light, intensity, room);
+
+//     Properties propcat(false, false, false);
+//     Mesh cat_mesh = Mesh("cat_model/cat.obj", Vector(0.8,0.8,0.8), propcat);
+//     Vector resize(0, 15, 0);
+//     cat_mesh.resize(resize, 0.4);
+//     cat_mesh.construct(cat_mesh.root, 0, cat_mesh.tmesh.indices.size());
+//     scene.add(&cat_mesh);
+    
+//     scene.add(&ceil);
+//     scene.add(&floor);
+//     scene.add(&front);
+//     scene.add(&left);
+//     scene.add(&right);
+//     scene.add(&back);
+//     //scene.add(&S);
+//     // scene.add(&S2);
+//     // scene.add(&S3);
+
+// 	std::vector<unsigned char> image(W * H * 3, 0);
+//     #pragma omp parallel for collapse(2) schedule(guided)
+// 	for (int i = 0; i < H; i++) {
+// 		for (int j = 0; j < W; j++) {
+
+//             Vector color(0,0,0);
+//             double z = -W/(2.*tan(fov/2));
+//             for(int n = 0; n < N; ++n){
+//                 double r1 = unif(gen);
+//                 double r2 = unif(gen);
+//                 double x2 = sqrt(-2*log(r1)) * cos(2*pi*r1) * 0.25;
+//                 double y2 = sqrt(-2*log(r1)) * sin(2*pi*r1) * 0.25;
+
+//                 Vector ray_direction(j - W/2 +0.5 + x2, H/2 - i - 0.5 + y2, z);
+//                 ray_direction.normalize();
+//                 Ray ray(camera, ray_direction);
+//                 color = color + scene.getColor(ray, depth);
+//             }
+//             color = color / N;
+            
+//             image[(i * W + j) * 3 + 0] = std::max(0., std::min(255., std::pow(color.data[0], 1./2.2)));
+//             image[(i * W + j) * 3 + 1] = std::max(0., std::min(255., std::pow(color.data[1], 1./2.2)));
+//             image[(i * W + j) * 3 + 2] = std::max(0., std::min(255., std::pow(color.data[2], 1./2.2)));
+
+// 		}
+// 	}
+// 	stbi_write_png("image.png", W, H, 3, &image[0], 0);
+
+//     //delete cat_mesh;
+// 	return 0;
+// }
+
+// // std vector std vector double textures
+// // std vector int texture W
+// //  textureH
+// // //load texture (char* file)
+// // int W? H, C
+// // unsigner char * texture = stbi_load(file, &W, &H, &C, 3)
+// // textureW.pushback(W);
+// // textureH.pushback
+// // std vector double current_tex(W*H*3)
+// // for i < W*H*3
+// // curretn_text[i] = std::power(tex[i] /  255. , 2.2)
+// // textures.push_back(current_text)
+// // mesh.load_texture(filename)
+// // return current albdedo at intersetc and not just albedo of the cat itself
+// // vector UV = interpolation of the UV coordiantes (much like normal)
+// // U = std::min(UV[0]*texturesW[indices[i].group] -1. , UV[0]*texturesW[indices[i].group]); same min for the height after and use max than 0
+// // V = (1-UV[1])*texturesH[indices[i].group]; maybe 1- maybe not
+// // texH = texturesH[indices[i].group]
+// // texW = same
+// // albedo = Vector( textures[indicies[i].group][V*texH + U + 0], textures[indicies[i].group][V*texH + U + 1], textures[indicies[i].group][V*texH + U + 2]
+// // dont forget that Mesh returns this albedo so OBject should also and so should Sphere
