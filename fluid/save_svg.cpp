@@ -66,13 +66,14 @@ public:
     }
 
     double area(){
-        double sum = 0;
+        double sum = 0.;
         int n = vertices.size();
         if(n < 3){
-            return 0;
+            return 0.;
         }
         for(int i = 0; i < n; i++){
-            sum += (vertices[i][0] * vertices[(i == n-1) ? 0 : i+1][1]) - (vertices[(i == n-1) ? 0 : i+1][0] * vertices[i][1]);
+            int j = (i == n-1) ? 0 : i+1;
+            sum += (vertices[i][0] * vertices[j][1] - vertices[j][0] * vertices[i][1]);
         }
         return std::abs(sum) / 2. ;
     }
@@ -83,9 +84,9 @@ public:
             return 0;
         }
         double sum = 0;
+
         for(int i = 1; i< n-1; i++){
             Vector triangle[3] =  {vertices[0], vertices[i], vertices[i+1]};
-
             double integral = 0;
             for(int j = 0; j < 3; j++){
                 for(int k = j; k < 3; k++){
@@ -94,7 +95,8 @@ public:
             }
             Vector edge1 = triangle[1] - triangle[0];
             Vector edge2 = triangle[2] - triangle[0];
-            double area = 0.5 * std::abs(edge1[1]*edge2[0] - edge1[0]*edge2[1]);
+
+            double area = 0.5 * std::abs(edge1[0]*edge2[1] - edge1[1]*edge2[0]);
             sum += integral * area / 6.;
         }
         return sum;
@@ -103,23 +105,19 @@ public:
     Vector centroid(){
         
         int n = vertices.size();
-        if(n < 3) return Vector(0, 0, 0);
+        if(n < 3){return Vector(0, 0, 0);} 
         double sum = 0;
         double A = area();
+        Vector Centroid(0., 0., 0.);
 
-
-        for(int j = 0 ; j < n; j++){
-            sum += (vertices[j][0] + vertices[(j == n-1) ? 0 : j+1][0]) * (vertices[j][0] * vertices[(j == n-1) ? 0 : j+1][1] - vertices[j][1] * vertices[(j == n-1) ? 0 : j+1 ][0]);
+        for (int i = 0; i < n; i++){
+            int j = (i==n-1)? 0: (i+1);
+            double cross_prod = (vertices[i][0]*vertices[j][1] - vertices[j][0]*vertices[i][1]);
+            Centroid = Centroid - (vertices[i]+ vertices[j])*cross_prod;       
         }
-        double Cx = 1./(6. * A) * sum;
-        sum = 0;
-
-        for(int j = 0 ; j < n; j++){
-            sum += (vertices[j][1] + vertices[(j == n-1) ? 0 : j+1][1]) * ( vertices[j][0] * vertices[(j == n-1) ? 0 : j+1][1] - vertices[j][1] * vertices[(j == n-1) ? 0 : j+1 ][0]);
-        }
-        double Cy = 1./(6. * A) * sum;
-    
-        return Vector(Cx, Cy, 0.);
+        
+        Centroid = Centroid/(6. * A);
+        return Centroid;
     }
 };  
  
