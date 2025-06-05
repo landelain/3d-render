@@ -11,6 +11,14 @@
 #define PI 3.14159
 #define VOL_FLUID 0.6
 
+/*
+
+    The basic outline of my code and most of the classes along with their methods 
+    follow the implementation from the professor during the live-coding.
+
+*/
+
+
 std::random_device rd;
 std::mt19937 gen(rd());
 std::uniform_real_distribution<double> unif(0.0, 1.0);
@@ -443,7 +451,7 @@ public:
         for(int i = 0; i < pics ; i ++){
             std::cout << i+1 << " over " << pics << std::endl;
             time_step(dt);
-            save_frame(ot.diagram.diagram, "test/animation", i);
+            save_frame(ot.diagram.diagram, "test2/animation", i);
         }
     }
 
